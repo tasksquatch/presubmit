@@ -44,7 +44,7 @@
     "@octokit/oauth-methods": "^6.0.5",
     "@octokit/request": "^10.0.16",
     "@octokit/rest": "^22.0.0",
-    "commander": "^14.0.0",
+    "commander": "^15.0.0",
     "keytar": "^7.9.0",
     "yaml": "^2.8.0"
   },
