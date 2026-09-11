@@ -10,8 +10,8 @@ export interface StoredCredentials {
 }
 
 /**
- * Credential store abstraction. Production uses the OS keychain via keytar;
- * tests use an in-memory fake.
+ * Credential store abstraction. Production uses the OS keychain via
+ * @napi-rs/keyring; tests use an in-memory fake.
  */
 export interface CredentialStore {
   load(): Promise<StoredCredentials | null>;
@@ -19,5 +19,5 @@ export interface CredentialStore {
   clear(): Promise<void>;
 }
 
-export const KEYTAR_SERVICE = "tasksquatch-presubmit";
-export const KEYTAR_ACCOUNT = "github";
+export const KEYRING_SERVICE = "tasksquatch-presubmit";
+export const KEYRING_ACCOUNT = "github";

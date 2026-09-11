@@ -21,7 +21,7 @@ sudo apt-get update
 sudo apt-get install -y libsecret-1-0
 ```
 
-Interactive authentication also needs a working Secret Service session on Linux, Keychain on macOS, or Credential Manager on Windows. Building keytar from source may require platform development tools and libsecret development headers on Linux. CLI help/version and `run --no-publish` do not need credential-store access.
+Interactive authentication also needs a working Secret Service session on Linux, Keychain on macOS, or Credential Manager on Windows. On Linux, a Secret Service provider typically needs the `libsecret-1-0` runtime library. CLI help/version and `run --no-publish` do not need credential-store access.
 
 ### Running in CI
 
@@ -30,15 +30,11 @@ Presubmit's OS credential-store integration is intended for local developer comp
 To run checks in CI without publishing a separate Check Run, use `--no-publish`. For example, after checking out the repository and setting up a supported Node.js version (22.13+ in the 22 release line, or 24+):
 
 ```yaml
-- name: Install credential-store runtime dependency
-  run: |
-    sudo apt-get update
-    sudo apt-get install -y libsecret-1-0
 - run: npm ci
 - run: npx --no-install presubmit run --no-publish
 ```
 
-The library installation is a conservative Ubuntu setup step; `--no-publish` does not access the credential store. If keytar must build from source, also install `libsecret-1-dev` and the platform build tools. Install the configured runner (such as `just`) and its check dependencies separately. The normal clean-worktree and pushed-commit gates still apply: run from the repository root, ensure the checkout is clean, and fetch the remote-tracking refs needed to verify HEAD. Pull-request merge checkouts may need additional Git setup to satisfy those gates.
+`--no-publish` does not access the credential store, so CI does not need `libsecret` or a Secret Service session for that path. Install the configured runner (such as `just`) and its check dependencies separately. The normal clean-worktree and pushed-commit gates still apply: run from the repository root, ensure the checkout is clean, and fetch the remote-tracking refs needed to verify HEAD. Pull-request merge checkouts may need additional Git setup to satisfy those gates.
 
 For CI publication using the current authentication flow, you must additionally provision a working Secret Service/keychain session and valid GitHub App user credentials through the supported login flow. A fresh hosted runner is not ready for this by default. Prefer `--no-publish` and let the CI job report its own result; unattended token-based publication would require a separate authentication integration.
 

@@ -8,7 +8,7 @@ import { resolveGitHubRepo, type GitHubRepoRef } from "../git/remote.js";
 import { info, warn } from "../output/index.js";
 import { runDeviceFlow } from "./device-flow.js";
 import { createGitHubOAuthClient, OAuthError } from "./github-oauth.js";
-import { isKeytarAvailable, createKeytarStore } from "./keytar-store.js";
+import { isKeyringAvailable, createKeyringStore } from "./keyring-store.js";
 import type { OAuthClient } from "./oauth-client.js";
 import { isAccessTokenExpired, refreshStoredCredentials } from "./refresh.js";
 import { revokeAndClear } from "./revoke.js";
@@ -108,13 +108,13 @@ export async function defaultCheckChecksWrite(
 }
 
 export async function getDefaultStore(): Promise<CredentialStore> {
-  const available = await isKeytarAvailable();
+  const available = await isKeyringAvailable();
   if (!available) {
     throw new AuthError(
-      "OS credential store (keytar) is unavailable. On Linux install libsecret-1-0; check Secret Service / Keychain access or reinstall keytar.",
+      "OS credential store is unavailable. On Linux install libsecret-1-0 and enable Secret Service; otherwise check Keychain / Credential Manager.",
     );
   }
-  return createKeytarStore();
+  return createKeyringStore();
 }
 
 function requireConfiguredClientId(
@@ -311,7 +311,7 @@ export function createAuthSession(deps: SessionDeps): AuthSession {
   return createSession(deps);
 }
 
-/** CLI helper: session with keytar store + real GitHub OAuth. */
+/** CLI helper: session with OS keyring store + real GitHub OAuth. */
 export async function createDefaultAuthSession(
   overrides: Partial<SessionDeps> = {},
 ): Promise<AuthSession> {

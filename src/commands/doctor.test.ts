@@ -74,7 +74,7 @@ afterEach(() => {
 const healthyBase = {
   env: { PRESUBMIT_GITHUB_CLIENT_ID: "Iv1.doctor-test" },
   isGitAvailable: async () => true,
-  isKeytarAvailable: async () => true,
+  isKeyringAvailable: async () => true,
   isCommandAvailable: async () => true,
   session: mockSession(),
   checkChecksWrite: async () => true as boolean | null,
