@@ -1,0 +1,65 @@
+{
+  "name": "@tasksquatch/presubmit",
+  "version": "0.1.2",
+  "description": "Local Presubmit CLI to run repo checks and publish a GitHub Check Run",
+  "keywords": [
+    "presubmit",
+    "github",
+    "checks",
+    "cli"
+  ],
+  "homepage": "https://github.com/tasksquatch/presubmit#readme",
+  "bugs": {
+    "url": "https://github.com/tasksquatch/presubmit/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tasksquatch/presubmit.git"
+  },
+  "license": "MIT",
+  "author": "Tasksquatch",
+  "type": "module",
+  "main": "./dist/cli.js",
+  "bin": {
+    "presubmit": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "SECURITY.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "tsx src/cli.ts",
+    "presubmit": "tsx src/cli.ts"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@octokit/oauth-methods": "^6.0.5",
+    "@octokit/request": "^10.0.16",
+    "@octokit/rest": "^22.0.0",
+    "commander": "^14.0.0",
+    "keytar": "^7.9.0",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@types/node": "^24.3.0",
+    "eslint": "^9.35.0",
+    "globals": "^16.3.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.42.0",
+    "vitest": "^5.0.0"
+  },
+  "allowScripts": {
+    "keytar@7.9.0": true,
+    "esbuild@0.28.2": true
+  }
+}
