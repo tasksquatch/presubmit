@@ -8,11 +8,11 @@ afterEach(() => {
 
 describe("lazy credential store", () => {
   it("loads the native module only when a store operation needs it", async () => {
-    const getPassword = vi.fn().mockResolvedValue(null);
+    const getPassword = vi.fn().mockResolvedValue(undefined);
     const setPassword = vi.fn().mockResolvedValue(undefined);
-    const deletePassword = vi.fn().mockResolvedValue(true);
+    const deleteCredential = vi.fn().mockResolvedValue(false);
     const AsyncEntry = vi.fn(function AsyncEntry() {
-      return { getPassword, setPassword, deletePassword };
+      return { getPassword, setPassword, deleteCredential };
     });
     const factory = vi.fn(() => ({ AsyncEntry }));
     vi.doMock("@napi-rs/keyring", factory);
@@ -26,7 +26,28 @@ describe("lazy credential store", () => {
     await store.save({ accessToken: "synthetic" });
     await store.clear();
     expect(setPassword).toHaveBeenCalled();
-    expect(deletePassword).toHaveBeenCalled();
+    expect(deleteCredential).toHaveBeenCalled();
+  });
+
+  it("propagates locked or inaccessible store errors from load and clear", async () => {
+    const getPassword = vi
+      .fn()
+      .mockRejectedValue(new Error("credential store is locked"));
+    const deleteCredential = vi
+      .fn()
+      .mockRejectedValue(new Error("credential store is locked"));
+    const AsyncEntry = vi.fn(function AsyncEntry() {
+      return {
+        getPassword,
+        setPassword: vi.fn(),
+        deleteCredential,
+      };
+    });
+    vi.doMock("@napi-rs/keyring", () => ({ AsyncEntry }));
+    const { createKeyringStore } = await import("./keyring-store.js");
+    const store = createKeyringStore();
+    await expect(store.load()).rejects.toThrow(/locked/);
+    await expect(store.clear()).rejects.toThrow(/locked/);
   });
 
   it("keeps help/version usable and reports actionable auth errors without native libraries", async () => {

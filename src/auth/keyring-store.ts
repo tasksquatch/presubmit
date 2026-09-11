@@ -14,22 +14,12 @@ async function loadKeyring(): Promise<KeyringModule> {
   }
 }
 
-function isNoEntryError(err: unknown): boolean {
-  if (!(err instanceof Error)) {
-    return false;
-  }
-  const message = err.message.toLowerCase();
-  return (
-    message.includes("no entry") ||
-    message.includes("noent") ||
-    message.includes("not found") ||
-    message.includes("password not found")
-  );
-}
-
 /**
  * OS credential store backed by @napi-rs/keyring (macOS Keychain, Windows
  * Credential Manager, Linux Secret Service).
+ *
+ * Requires @napi-rs/keyring >= 2.0.0 so NoEntry is distinct from locked,
+ * inaccessible, or ambiguous store failures (1.x mapped all errors to empty).
  */
 export function createKeyringStore(
   service = KEYRING_SERVICE,
@@ -39,18 +29,12 @@ export function createKeyringStore(
     async load(): Promise<StoredCredentials | null> {
       const { AsyncEntry } = await loadKeyring();
       const entry = new AsyncEntry(service, account);
-      try {
-        const raw = await entry.getPassword();
-        if (!raw) {
-          return null;
-        }
-        return JSON.parse(raw) as StoredCredentials;
-      } catch (err) {
-        if (isNoEntryError(err)) {
-          return null;
-        }
-        throw err;
+      // 2.x: undefined means NoEntry only; locked/inaccessible/ambiguous reject.
+      const raw = await entry.getPassword();
+      if (raw == null || raw === "") {
+        return null;
       }
+      return JSON.parse(raw) as StoredCredentials;
     },
 
     async save(credentials: StoredCredentials): Promise<void> {
@@ -62,14 +46,8 @@ export function createKeyringStore(
     async clear(): Promise<void> {
       const { AsyncEntry } = await loadKeyring();
       const entry = new AsyncEntry(service, account);
-      try {
-        await entry.deletePassword();
-      } catch (err) {
-        if (isNoEntryError(err)) {
-          return;
-        }
-        throw err;
-      }
+      // 2.x: false means already absent; true means deleted; failures reject.
+      await entry.deleteCredential();
     },
   };
 }
