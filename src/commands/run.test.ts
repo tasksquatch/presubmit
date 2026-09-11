@@ -263,11 +263,174 @@ describe("createProgram run options", () => {
     expect(run).toBeDefined();
     const names = run!.options.map((o) => o.long ?? o.short);
     expect(names).toEqual(
-      expect.arrayContaining(["--sha", "--no-publish", "--skip-integrity"]),
+      expect.arrayContaining([
+        "--sha",
+        "--no-publish",
+        "--skip-integrity",
+        "--auth",
+      ]),
     );
   });
 });
 
+
+describe("runCommand installation auth", () => {
+  it("skips device-flow session when auth is installation", async () => {
+    const session = mockSession();
+    const checks = mockChecks();
+    const code = await runCommand({
+      cwd: "/repo",
+      auth: "installation",
+      skipIntegrity: true,
+      discover: async () => cleanState,
+      session,
+      checksClient: checks,
+      runChecksFn: async () => okRun(),
+    });
+    expect(code).toBe(ExitCode.Success);
+    expect(session.ensureAccessToken).not.toHaveBeenCalled();
+    expect(checks.verifyAppAccess).toHaveBeenCalled();
+    expect(checks.createInProgressCheckRun).toHaveBeenCalled();
+  });
+
+  it("returns AuthError when installation credentials are missing", async () => {
+    const session = mockSession();
+    const runner = vi.fn(async () => okRun());
+    const code = await runCommand({
+      cwd: "/repo",
+      auth: "installation",
+      skipIntegrity: true,
+      discover: async () => cleanState,
+      session,
+      env: {},
+      runChecksFn: runner,
+    });
+    expect(code).toBe(ExitCode.AuthError);
+    expect(session.ensureAccessToken).not.toHaveBeenCalled();
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("returns GitHubError when installation token mint fails", async () => {
+    const { GitHubApiError } = await import("../github/index.js");
+    const session = mockSession();
+    const code = await runCommand({
+      cwd: "/repo",
+      auth: "installation",
+      skipIntegrity: true,
+      discover: async () => cleanState,
+      session,
+      installationAuth: async () => {
+        throw new GitHubApiError("installation 2 was not found");
+      },
+      runChecksFn: async () => okRun(),
+    });
+    expect(code).toBe(ExitCode.GitHubError);
+    expect(session.ensureAccessToken).not.toHaveBeenCalled();
+  });
+
+  it("redacts token material in installation auth failures", async () => {
+    const { GitHubApiError } = await import("../github/index.js");
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((msg?: unknown) => {
+      errors.push(String(msg ?? ""));
+    });
+    try {
+      const code = await runCommand({
+        cwd: "/repo",
+        auth: "installation",
+        skipIntegrity: true,
+        discover: async () => cleanState,
+        installationAuth: async () => {
+          throw new GitHubApiError("mint failed ghp_shorttoken");
+        },
+        runChecksFn: async () => okRun(),
+      });
+      expect(code).toBe(ExitCode.GitHubError);
+      const text = errors.join("\n");
+      expect(text).toContain("[redacted]");
+      expect(text).not.toContain("ghp_shorttoken");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("redacts token material when Check Run completion fails", async () => {
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((msg?: unknown) => {
+      errors.push(String(msg ?? ""));
+    });
+    try {
+      const checks = mockChecks({
+        completeCheckRun: vi
+          .fn()
+          .mockRejectedValue(new Error("update failed ghp_shorttoken")),
+      });
+      const code = await runCommand({
+        cwd: "/repo",
+        auth: "installation",
+        skipIntegrity: true,
+        discover: async () => cleanState,
+        checksClient: checks,
+        runChecksFn: async () => okRun(),
+      });
+      expect(code).toBe(ExitCode.GitHubError);
+      const text = errors.join("\n");
+      expect(text).toContain("[redacted]");
+      expect(text).not.toContain("ghp_shorttoken");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("does not mint installation tokens when publish is disabled", async () => {
+    const installationAuth = vi.fn();
+    const session = mockSession();
+    const code = await runCommand({
+      cwd: "/repo",
+      auth: "installation",
+      publish: false,
+      skipIntegrity: true,
+      discover: async () => cleanState,
+      session,
+      installationAuth,
+      runChecksFn: async () => okRun(),
+    });
+    expect(code).toBe(ExitCode.Success);
+    expect(installationAuth).not.toHaveBeenCalled();
+    expect(session.ensureAccessToken).not.toHaveBeenCalled();
+  });
+
+  it("omits developer login from Check Run output in installation mode", async () => {
+    const checks = mockChecks();
+    await runCommand({
+      cwd: "/repo",
+      auth: "installation",
+      skipIntegrity: true,
+      discover: async () => cleanState,
+      checksClient: checks,
+      runChecksFn: async () => okRun(),
+    });
+    const output = vi.mocked(checks.completeCheckRun).mock.calls[0]?.[0].output;
+    expect(output?.summary).not.toMatch(/Developer/);
+  });
+
+  it("forwards env to the runner so secrets can be scrubbed", async () => {
+    let seen: NodeJS.ProcessEnv | undefined;
+    const code = await runCommand({
+      cwd: "/repo",
+      publish: false,
+      skipIntegrity: true,
+      discover: async () => cleanState,
+      env: { PRESUBMIT_GITHUB_PRIVATE_KEY: "pem-secret", PATH: "/bin" },
+      runChecksFn: async (opts) => {
+        seen = opts.env;
+        return okRun();
+      },
+    });
+    expect(code).toBe(ExitCode.Success);
+    expect(seen?.PRESUBMIT_GITHUB_PRIVATE_KEY).toBe("pem-secret");
+  });
+});
 
 describe("publication privacy", () => {
   it.each(["failure", "cancelled", "spawn-error"])("never uploads diagnostic output for %s", async (scenario) => {

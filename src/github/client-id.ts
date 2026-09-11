@@ -12,7 +12,6 @@ export const CLIENT_ID_ENV = "PRESUBMIT_GITHUB_CLIENT_ID";
 /** Unsupported secret env vars — never read for auth. */
 export const FORBIDDEN_SECRET_ENVS = [
   "PRESUBMIT_GITHUB_CLIENT_SECRET",
-  "PRESUBMIT_GITHUB_PRIVATE_KEY",
 ] as const;
 
 export type ClientIdSource = "default" | "env";
@@ -25,7 +24,8 @@ export interface ResolvedClientId {
 /**
  * Resolve the GitHub App Client ID.
  * `PRESUBMIT_GITHUB_CLIENT_ID` overrides the compiled default for testing.
- * Client secret / private key env vars are never used.
+ * Client secret env vars are never used. Installation auth uses
+ * `PRESUBMIT_GITHUB_PRIVATE_KEY` only with `--auth installation`.
  */
 export function resolveClientId(
   env: NodeJS.ProcessEnv = process.env,

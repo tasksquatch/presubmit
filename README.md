@@ -42,7 +42,17 @@ To run checks in CI without publishing a separate Check Run, use `--no-publish`.
 
 `--no-publish` does not access the credential store, so CI does not need `libsecret` or a Secret Service session for that path. Install the configured runner (such as `just`) and its check dependencies separately. The normal clean-worktree and pushed-commit gates still apply: run from the repository root, ensure the checkout is clean, and fetch the remote-tracking refs needed to verify HEAD. Pull-request merge checkouts may need additional Git setup to satisfy those gates.
 
-For CI publication using the current authentication flow, you must additionally provision a working Secret Service/keychain session and valid GitHub App user credentials through the supported login flow. A fresh hosted runner is not ready for this by default. Prefer `--no-publish` and let the CI job report its own result; unattended token-based publication would require a separate authentication integration.
+To publish a Check Run from automation without device-flow or a keyring, use GitHub App **installation** authentication:
+
+```bash
+export PRESUBMIT_GITHUB_APP_ID="<app-id>"
+export PRESUBMIT_GITHUB_INSTALLATION_ID="<installation-id>"
+export PRESUBMIT_GITHUB_PRIVATE_KEY_PATH=/path/to/presubmit-app.pem
+# Or: PRESUBMIT_GITHUB_PRIVATE_KEY with the PEM contents (overrides the path).
+npx --no-install presubmit run --auth installation
+```
+
+`--auth installation` is explicit. Default `presubmit run` still uses device-flow credentials from the OS keyring; leftover installation env vars do not change that path. Diagnose installation credentials with `presubmit doctor --auth installation` or `presubmit auth status --auth installation`. `presubmit doctor` / `auth status` without `--auth` use installation diagnostics automatically when the App ID, installation ID, and private key (or key path) are all set.
 
 ## Commands
 
@@ -54,7 +64,7 @@ For CI publication using the current authentication flow, you must additionally 
 | `presubmit auth status` | Show identity, expiry, and repository access diagnostics |
 | `presubmit doctor` | Diagnose Git, authentication, App access, runner, and configuration |
 
-Install the **Tasksquatch Presubmit** GitHub App on the repositories where you intend to publish results, with Checks write permission. Obtain the installation link from the App owner. The CLI embeds a public OAuth client ID; it contains no App private key or client secret. `PRESUBMIT_GITHUB_CLIENT_ID` can override the client ID for testing. Client secret and private-key environment variables are unsupported.
+Install the **Tasksquatch Presubmit** GitHub App on the repositories where you intend to publish results, with Checks write permission. Obtain the installation link from the App owner. Human `presubmit login` / default `presubmit run` use the embedded public OAuth client ID and the OS keyring; that path does not read an App private key. `PRESUBMIT_GITHUB_CLIENT_ID` can override the client ID for testing. `PRESUBMIT_GITHUB_CLIENT_SECRET` is unsupported and ignored. Installation auth (`--auth installation`) uses `PRESUBMIT_GITHUB_APP_ID`, `PRESUBMIT_GITHUB_INSTALLATION_ID`, and `PRESUBMIT_GITHUB_PRIVATE_KEY` or `PRESUBMIT_GITHUB_PRIVATE_KEY_PATH`. The configured check recipe never inherits those variables or the installation access token.
 
 **Logout does not revoke authorization at GitHub.** To revoke it, open GitHub **Settings → Applications → Authorized GitHub Apps**, select the App, and revoke authorization. See [reviewing authorized integrations](https://docs.github.com/en/apps/using-github-apps/reviewing-and-revoking-authorization-of-github-apps).
 
@@ -64,7 +74,10 @@ Install the **Tasksquatch Presubmit** GitHub App on the repositories where you i
 |--------|----------|
 | `--sha <revision>` | Assert that the revision resolves to checked-out HEAD; a different commit is rejected |
 | `--no-publish` | Run checks without authentication or GitHub publication; integrity gates still apply |
+| `--auth <mode>` | `device` (default): OS keyring session. `installation`: GitHub App installation token from env |
 | `--skip-integrity` | For testing: bypass clean-worktree and pushed-commit gates; SHA equality still applies |
+
+`presubmit doctor` and `presubmit auth status` also accept `--auth`. Their default is `auto` (installation diagnostics when installation env is complete or partial; otherwise device-flow). Pass `--auth device` or `--auth installation` to force one path.
 
 By default the worktree must be clean and HEAD must be present in local remote-tracking refs. Keep those refs current; these checks are local safeguards, not independent proof of remote state. To test another commit, check it out first.
 
@@ -90,7 +103,7 @@ GitHub receives only the check name, commit, developer identity, duration, CLI v
 
 Local Presubmit records developer attestation. The machine, configuration, executable, and token are under developer control. A successful check is not independent verification; do not treat a green Local Presubmit Check Run as a merge gate for security-sensitive decisions or releases without separate trusted hosted validation.
 
-The configured command executes with your local user privileges and inherited environment. It is not sandboxed. Run untrusted contributions only in an isolated environment without sensitive credentials or access to private systems. Review dependency and runner changes before executing them.
+The configured command executes with your local user privileges and inherited environment, except that Presubmit strips App private-key, App ID, installation ID, and client-secret variables before spawning the recipe. The installation access token is held in memory only and is never exported to the child. The recipe is not otherwise sandboxed. Run untrusted contributions only in an isolated environment without sensitive credentials or access to private systems. Review dependency and runner changes before executing them.
 
 The OAuth client ID embedded in the CLI is public by design (not a secret). Only run `presubmit login` from a reviewed install of `@tasksquatch/presubmit`. On GitHub’s consent screen, confirm the App is **Tasksquatch Presubmit**. Unofficial forks or lookalike CLIs can reuse the same public client ID to solicit authorization for this App.
 

@@ -86,7 +86,11 @@ describe("auth commands", () => {
       env: { PRESUBMIT_GITHUB_CLIENT_ID: "Iv1.test" },
     });
 
-    const code = await authStatusCommand({ session });
+    const code = await authStatusCommand({
+      session,
+      auth: "device",
+      env: {},
+    });
     expect(code).toBe(ExitCode.AuthError);
   });
 
@@ -104,7 +108,65 @@ describe("auth commands", () => {
       resolveRepo: async () => null,
     });
 
-    const code = await authStatusCommand({ session });
+    const code = await authStatusCommand({
+      session,
+      auth: "device",
+      env: {},
+    });
     expect(code).toBe(ExitCode.Success);
+  });
+
+  it("authStatusCommand reports installation mode without device-flow fields", async () => {
+    const infos: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((msg?: unknown) => {
+      infos.push(String(msg ?? ""));
+    });
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const pem = "synthetic-inline-pem";
+    const code = await authStatusCommand({
+      auth: "installation",
+      env: {
+        PRESUBMIT_GITHUB_APP_ID: "11",
+        PRESUBMIT_GITHUB_INSTALLATION_ID: "22",
+        PRESUBMIT_GITHUB_PRIVATE_KEY: pem,
+      },
+      installationAuth: async () => ({
+        accessToken: "install-token",
+        access: {
+          token: "install-token",
+          expiresAt: "2099-01-01T00:00:00.000Z",
+          permissions: { checks: "write" },
+          repositorySelection: "all",
+        },
+        credentials: {
+          appId: 11,
+          installationId: 22,
+          privateKey: pem,
+          keySource: "env",
+        },
+        checkChecksWrite: async () => true,
+      }),
+      resolveRepo: async () => ({ owner: "example-org", repo: "example-repo" }),
+    });
+
+    expect(code).toBe(ExitCode.Success);
+    const text = infos.join("\n");
+    expect(text).toMatch(/Auth mode: installation/);
+    expect(text).toMatch(/App ID: 11/);
+    expect(text).toMatch(/Installation ID: 22/);
+    expect(text).toMatch(/PRESUBMIT_GITHUB_PRIVATE_KEY/);
+    expect(text).toMatch(/Checks write available/);
+    expect(text).not.toMatch(/Refresh token/);
+    expect(text).not.toContain("install-token");
+    expect(text).not.toContain(pem);
+  });
+
+  it("authStatusCommand returns AuthError for missing installation credentials", async () => {
+    const code = await authStatusCommand({
+      auth: "installation",
+      env: {},
+    });
+    expect(code).toBe(ExitCode.AuthError);
   });
 });
