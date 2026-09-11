@@ -5,7 +5,8 @@ import {
   type AuthSession,
   type CredentialStore,
 } from "../auth/index.js";
-import { ExitCode, error, info } from "../output/index.js";
+import { PRESUBMIT_APP_NAME } from "../github/app-info.js";
+import { ExitCode, error, info, warn } from "../output/index.js";
 
 export interface LoginCommandOptions {
   session?: AuthSession;
@@ -16,6 +17,9 @@ export async function loginCommand(
   options: LoginCommandOptions = {},
 ): Promise<ExitCode> {
   try {
+    warn(
+      `Only run login from a trusted @tasksquatch/presubmit install. On GitHub, confirm the App is "${PRESUBMIT_APP_NAME}".`,
+    );
     const session =
       options.session ??
       (await createDefaultAuthSession(

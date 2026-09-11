@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAuthSession } from "../auth/session.js";
 import { createMemoryStore } from "../auth/memory-store.js";
 import type { OAuthClient } from "../auth/oauth-client.js";
@@ -6,6 +6,10 @@ import { authStatusCommand } from "./auth-status.js";
 import { loginCommand } from "./login.js";
 import { logoutCommand } from "./logout.js";
 import { ExitCode } from "../output/index.js";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function mockOAuth(partial: Partial<OAuthClient> = {}): OAuthClient {
   return {
@@ -38,12 +42,22 @@ describe("auth commands", () => {
       sleep: async () => undefined,
     });
 
+    const warns: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((msg?: unknown) => {
+      warns.push(String(msg ?? ""));
+    });
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+
     const code = await loginCommand({ session });
     expect(code).toBe(ExitCode.Success);
     expect(await store.load()).toMatchObject({ login: "octocat" });
+    expect(warns.some((w) => /trusted @tasksquatch\/presubmit/i.test(w))).toBe(
+      true,
+    );
+    expect(warns.some((w) => /Tasksquatch Presubmit/i.test(w))).toBe(true);
   });
 
-  it("logoutCommand clears credentials", async () => {
+  it("logoutCommand clears credentials and warns that GitHub auth remains", async () => {
     const store = createMemoryStore({ accessToken: "ghu_x", login: "octocat" });
     const session = createAuthSession({
       store,
@@ -51,9 +65,18 @@ describe("auth commands", () => {
       env: { PRESUBMIT_GITHUB_CLIENT_ID: "Iv1.test" },
     });
 
+    const warns: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((msg?: unknown) => {
+      warns.push(String(msg ?? ""));
+    });
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+
     const code = await logoutCommand({ session });
     expect(code).toBe(ExitCode.Success);
     expect(await store.load()).toBeNull();
+    expect(warns.some((w) => /GitHub authorization remains/i.test(w))).toBe(
+      true,
+    );
   });
 
   it("authStatusCommand returns AuthError when logged out", async () => {

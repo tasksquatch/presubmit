@@ -5,7 +5,8 @@ import {
   type OAuthTokenResult,
 } from "./oauth-client.js";
 import type { StoredCredentials } from "./store.js";
-import { info } from "../output/index.js";
+import { PRESUBMIT_APP_NAME } from "../github/app-info.js";
+import { info, warn } from "../output/index.js";
 
 export interface DeviceFlowOptions {
   clientId: string;
@@ -101,5 +102,11 @@ function defaultPrompt(prompt: {
   info(`  ${prompt.verificationUri}`);
   info(`  Enter code: ${prompt.userCode}`);
   info(`  (code expires in ~${Math.round(prompt.expiresIn / 60)} minutes)`);
+  warn(
+    "Authorize only if you started login from a trusted @tasksquatch/presubmit install.",
+  );
+  warn(
+    `On GitHub, confirm the App name is "${PRESUBMIT_APP_NAME}" before approving.`,
+  );
   info("");
 }
