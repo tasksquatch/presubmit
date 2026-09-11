@@ -85,7 +85,7 @@ By default (`--integrity developer`) the worktree must be clean and HEAD must be
 
 ## Automation contract
 
-Unattended callers should pin to this CLI surface. Human `presubmit run` is unchanged.
+Unattended callers should pin to this CLI surface. Human `presubmit run` invocation, auth, and integrity profiles are unchanged; failing Check Runs now attach a truncated runner tail by default (see below).
 
 | Mode | Invocation | Auth | Integrity |
 |------|------------|------|-----------|
@@ -136,7 +136,7 @@ publishFailureOutput: true
 
 `maxLogLines` remains a deprecated compatibility setting for local capture only (default 100; integer 0–65536). It never enables uploads by itself. Each retained stdout, stderr, and combined output tail is capped at 64 KiB, while full output streams to the terminal. On a **failing** published Check Run, that local `capturedLog` tail is also sent as Check Run `output.text` after ANSI stripping, credential-shaped redaction, fencing, and a 65535-character cap. Set `publishFailureOutput: false` (or pass `--no-failure-output`) to keep failure Check Runs metadata-only. Success Check Runs stay metadata-only.
 
-GitHub always receives the check name, commit, attestation mode (`local-developer` or `orchestrator`), optional developer identity, duration, CLI version, conclusion, and a short result line. Failing Check Runs also receive truncated runner output (or a runner-start error) in `output.text` unless opted out. Redaction is best-effort and format-based (tokens, PEMs, JWTs, assignment-style secrets). Emails, IP addresses, and similar PII are left intact so logs stay actionable. Recipe output may still contain secrets the scanner does not recognize. Terminal output may still contain sensitive information; treat externally collected terminal/CI logs accordingly. Do not put secrets in check names or other published metadata.
+GitHub always receives the check name, commit, attestation mode (`local-developer` or `orchestrator`), optional developer identity, duration, CLI version, and conclusion. Failure, cancellation, and runner-start errors also include a short result line. Failing Check Runs also receive truncated runner output (or a runner-start error) in `output.text` unless opted out. Redaction is best-effort and format-based (tokens, PEMs, JWTs, assignment-style secrets). Emails, IP addresses, and similar PII are left intact so logs stay actionable. Recipe output may still contain secrets the scanner does not recognize. Terminal output may still contain sensitive information; treat externally collected terminal/CI logs accordingly. Do not put secrets in check names or other published metadata.
 
 ## Trust and security
 

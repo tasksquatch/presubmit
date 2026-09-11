@@ -64,12 +64,19 @@ const credentialRedactor = compilePolicy({
 const GITHUB_TOKEN_PATTERN =
   /\b(?:ghs_|ghu_|gho_|ghr_|ghp_|github_pat_)[A-Za-z0-9_]+/g;
 
+/** Broader than flare-redact's private_key labels (e.g. BEGIN FOO PRIVATE KEY). */
+const PEM_PRIVATE_KEY_PATTERN =
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g;
+
 /**
  * Replace credential-shaped secrets in user-facing text.
  * Best-effort; emails and IPs are intentionally left intact.
  */
 export function redactSecrets(text: string): string {
-  return credentialRedactor.redact(text).replace(GITHUB_TOKEN_PATTERN, "[redacted]");
+  return credentialRedactor
+    .redact(text)
+    .replace(PEM_PRIVATE_KEY_PATTERN, "[redacted]")
+    .replace(GITHUB_TOKEN_PATTERN, "[redacted]");
 }
 
 export function redactUnknown(err: unknown): string {

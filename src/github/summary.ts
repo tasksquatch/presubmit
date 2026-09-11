@@ -27,13 +27,22 @@ const LOCAL_DEVELOPER_DISCLAIMER =
 const ORCHESTRATOR_DISCLAIMER =
   "_Local Presubmit records an installation-auth run from automation for this commit. It is not independent GitHub-hosted verification. The Check Run uses the configured check name; this line discloses the auth path._";
 
+const ESC = String.fromCharCode(27);
+const BEL = String.fromCharCode(7);
+const C1_CSI = String.fromCharCode(155);
+const ST = `(?:${BEL}|${ESC}\\\\|${String.fromCharCode(156)})`;
+
+/**
+ * CSI (including private-mode `?`), OSC (BEL / ST terminated), and C1 CSI.
+ * Adapted from the MIT-licensed ansi-regex coverage of those families.
+ */
 const ANSI_ESCAPE = new RegExp(
-  `${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]|${String.fromCharCode(155)}[[\\]()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]`,
+  `[${ESC}${C1_CSI}][[\\]()#;?]*(?:(?:(?:(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]+)*|[a-zA-Z\\d]+(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?${ST})|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-nq-uy=><~]))`,
   "g",
 );
 
 /**
- * Strip CSI / ANSI color sequences from captured runner output.
+ * Strip ANSI / OSC control sequences from captured runner output.
  */
 export function stripAnsi(text: string): string {
   return text.replace(ANSI_ESCAPE, "");
@@ -50,11 +59,24 @@ export function prepareFailureOutputText(raw: string): string {
   return fenceAndCap(source);
 }
 
-function fenceAndCap(source: string): string {
-  let ticks = "```";
-  while (source.includes(ticks)) {
-    ticks += "`";
+function longestBacktickRun(source: string): number {
+  let max = 0;
+  let run = 0;
+  for (let i = 0; i < source.length; i++) {
+    if (source[i] === "`") {
+      run++;
+      if (run > max) {
+        max = run;
+      }
+    } else {
+      run = 0;
+    }
   }
+  return max;
+}
+
+function fenceAndCap(source: string): string {
+  const ticks = "`".repeat(Math.max(3, longestBacktickRun(source) + 1));
   const prefix = `${ticks}text\n`;
   const suffix = `\n${ticks}`;
   const budget = GITHUB_CHECK_OUTPUT_TEXT_MAX - prefix.length - suffix.length;

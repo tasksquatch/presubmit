@@ -37,7 +37,7 @@ export interface RunChecksResult {
   exitCode: number;
   stdout: string;
   stderr: string;
-  /** Combined local output tail (at most 64 KiB), never uploaded. */
+  /** Combined local output tail (at most 64 KiB). Published on failing Check Runs unless `--no-failure-output` or `publishFailureOutput: false`. */
   capturedLog: string;
   cancelled: boolean;
 }

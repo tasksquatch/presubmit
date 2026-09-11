@@ -15,6 +15,15 @@ describe("redactSecrets", () => {
     expect(redacted).not.toContain(`BEGIN ${"RSA PRIVATE KEY"}`);
   });
 
+  it("redacts custom PEM labels the vendor detector may miss", () => {
+    const body = "vendor-key-material";
+    const pem = `-----BEGIN FOO PRIVATE KEY-----\n${body}\n-----END FOO PRIVATE KEY-----`;
+    const redacted = redactSecrets(`failed: ${pem}`);
+    expect(redacted).toContain("[redacted]");
+    expect(redacted).not.toContain(body);
+    expect(redacted).not.toContain("BEGIN FOO PRIVATE KEY");
+  });
+
   it("redacts JWT-shaped strings", () => {
     const jwt = ["eyJhbGciOiJSUzI1NiJ9", "eyJpc3MiOiIxIn0", "signaturepart"].join(
       ".",

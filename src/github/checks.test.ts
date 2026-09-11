@@ -234,10 +234,24 @@ describe("prepareFailureOutputText", () => {
     const text = prepareFailureOutputText("```\nsecret\n```");
     expect(text.startsWith("````")).toBe(true);
   });
+
+  it("builds a fence from the longest backtick run without quadratic scanning", () => {
+    const run = "`".repeat(20);
+    const text = prepareFailureOutputText(`before ${run} after`);
+    expect(text.startsWith("`".repeat(21))).toBe(true);
+    expect(text).toContain(run);
+  });
 });
 
 describe("stripAnsi", () => {
   it("removes CSI color sequences", () => {
     expect(stripAnsi(`\u001b[31mred\u001b[0m`)).toBe("red");
+  });
+
+  it("removes private-mode CSI and OSC-8 hyperlinks", () => {
+    const hideCursor = `\u001b[?25lvisible`;
+    expect(stripAnsi(hideCursor)).toBe("visible");
+    const link = `\u001b]8;;https://example.com\u0007click\u001b]8;;\u0007`;
+    expect(stripAnsi(link)).toBe("click");
   });
 });
