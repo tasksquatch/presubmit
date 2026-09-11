@@ -38,24 +38,24 @@
     "presubmit": "tsx src/cli.ts"
   },
   "engines": {
-    "node": ">=22"
+    "node": "^22.13.0 || >=24.0.0"
   },
   "dependencies": {
     "@octokit/oauth-methods": "^6.0.5",
     "@octokit/request": "^10.0.16",
-    "@octokit/rest": "^22.0.0",
-    "commander": "^14.0.0",
+    "@octokit/rest": "^22.0.1",
+    "commander": "^15.0.0",
     "keytar": "^7.9.0",
-    "yaml": "^2.8.0"
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.35.0",
-    "@types/node": "^24.3.0",
-    "eslint": "^9.35.0",
-    "globals": "^16.3.0",
-    "tsx": "^4.20.0",
-    "typescript": "^5.9.0",
-    "typescript-eslint": "^8.42.0",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.5.1",
+    "eslint": "^10.10.0",
+    "globals": "^17.12.0",
+    "tsx": "^4.23.13",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.0",
     "vitest": "^5.0.0"
   },
   "allowScripts": {
