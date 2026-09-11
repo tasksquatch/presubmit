@@ -52,5 +52,5 @@ jobs:
             exit 1
           fi
 
-      - name: Publish to npmjs
-        run: npm publish
+      - name: Stage publish on npmjs
+        run: npm stage publish
