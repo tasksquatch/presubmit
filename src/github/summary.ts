@@ -17,7 +17,7 @@ const LOCAL_DEVELOPER_DISCLAIMER =
   "_Local Presubmit records that this developer machine ran the configured checks for this commit. It is not independent hosted verification._";
 
 const ORCHESTRATOR_DISCLAIMER =
-  "_Local Presubmit records an installation-auth run from automation for this commit. It is not independent GitHub-hosted verification. Operators may require this labeled check as a merge gate._";
+  "_Local Presubmit records an installation-auth run from automation for this commit. It is not independent GitHub-hosted verification. The Check Run uses the configured check name; this line discloses the auth path._";
 
 /**
  * Build Check Run title/summary/text without claiming independent verification.

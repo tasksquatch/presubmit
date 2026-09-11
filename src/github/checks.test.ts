@@ -157,6 +157,7 @@ describe("buildCheckOutput", () => {
     expect(out.summary).not.toContain("@dev");
     expect(out.summary).toMatch(/installation-auth run from automation/i);
     expect(out.summary).toMatch(/not independent GitHub-hosted verification/i);
+    expect(out.summary).toMatch(/configured check name/i);
     expect(out).not.toHaveProperty("text");
   });
 

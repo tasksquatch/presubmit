@@ -74,7 +74,7 @@ Install the **Tasksquatch Presubmit** GitHub App on the repositories where you i
 |--------|----------|
 | `--sha <revision>` | Assert that the revision resolves to checked-out HEAD; a different commit is rejected |
 | `--no-publish` | Run checks without authentication or GitHub publication; integrity gates still apply |
-| `--integrity <profile>` | `developer` (default): honor yaml clean + pushed gates. `pre-push`: fail-fast without requiring remote. `post-push`: require SHA on remote. See [Automation contract](#automation-contract) |
+| `--integrity <profile>` | `developer` (default): honor yaml clean + pushed gates. `pre-push`: fail-fast without requiring remote. `post-push`: fetch remote-tracking refs and require one to contain HEAD. See [Automation contract](#automation-contract) |
 | `--auth <mode>` | `device` (default): OS keyring session. `installation`: GitHub App installation token from env |
 | `--skip-integrity` | For testing: bypass clean-worktree and pushed-commit gates; SHA equality still applies. Not an automation profile |
 
@@ -90,7 +90,7 @@ Unattended callers should pin to this CLI surface. Human `presubmit run` is unch
 |------|------------|------|-----------|
 | Human / default | `presubmit run` | device (keyring) | `developer`: honor yaml `requireCleanWorktree` and `requirePushedCommit` |
 | Automation fail-fast | `presubmit run --no-publish --integrity pre-push` | none | yaml clean-worktree; do **not** require the commit on the remote |
-| Automation attest | `presubmit run --auth installation --integrity post-push [--sha <head>]` | installation env (below) | HEAD equals intended SHA; **require** the SHA on the remote |
+| Automation attest | `presubmit run --auth installation --integrity post-push [--sha <head>]` | installation env (below) | HEAD equals intended SHA; fetch remote-tracking refs and require one of them to contain HEAD |
 
 `--skip-integrity` is a testing escape hatch, not an automation profile. SHA equality (`--sha` must resolve to checked-out HEAD) always applies.
 
@@ -101,7 +101,9 @@ Auth rules:
 - Default `presubmit run` uses device-flow credentials from the OS keyring. Leftover installation env vars do not change that path.
 - `--integrity pre-push` cannot publish a Check Run (GitHub needs the SHA on the remote). Use `--no-publish`, or `--integrity post-push` after push. That combination exits **4**.
 
-Check Run summaries include `- **Attestation:** \`local-developer\`` for device-flow publish and `- **Attestation:** \`orchestrator\`` for installation-auth publish. The developer `@login` line is omitted in orchestrator mode.
+Both auth modes publish the configured check name (default `Local Presubmit`). GitHub branch protection keys on that name, so a successful laptop run and a successful installation-auth run satisfy the same required check. Check Run summaries include `- **Attestation:** \`local-developer\`` or `- **Attestation:** \`orchestrator\`` as disclosure of the auth path, not as a second required-check identity. The developer `@login` line is omitted in orchestrator mode.
+
+`--integrity post-push` runs `git fetch --prune --no-tags` on the repo remote, then requires some `refs/remotes/<remote>/*` ref to contain HEAD (including detached HEAD). That is a refreshed local remote-tracking check, not a GitHub API membership query; Check Run creation still fails if GitHub does not have the SHA.
 
 Exit codes are part of this contract:
 
@@ -135,7 +137,7 @@ GitHub receives only the check name, commit, attestation mode (`local-developer`
 
 ## Trust and security
 
-Local Presubmit records attestation, not independent GitHub-hosted verification. Device-flow Check Runs are labeled `local-developer` (laptop). Installation-auth Check Runs are labeled `orchestrator`. Operators may require the orchestrator-labeled check as a merge gate; do not treat laptop attestation as a security gate for releases. The machine, configuration, executable, and token remain under the runner's control.
+Local Presubmit records attestation, not independent GitHub-hosted verification. Device-flow and installation-auth publishes use the **same** configured check name (default `Local Presubmit`); GitHub required checks match that name, not the summary attestation line. The summary labels the auth path `local-developer` or `orchestrator`. Do not treat laptop attestation as a security gate for releases. The machine, configuration, executable, and token remain under the runner's control.
 
 The configured command executes with your local user privileges and inherited environment, except that Presubmit strips App private-key, App ID, installation ID, and client-secret variables before spawning the recipe. The installation access token is held in memory only and is never exported to the child. The recipe is not otherwise sandboxed. Run untrusted contributions only in an isolated environment without sensitive credentials or access to private systems. Review dependency and runner changes before executing them.
 

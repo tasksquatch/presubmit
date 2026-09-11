@@ -307,12 +307,12 @@ describe("integrity profiles", () => {
         result: "",
       },
       {
-        match: (a) => a.includes("@{u}"),
-        result: "origin/feature",
+        match: (a) => a[0] === "fetch",
+        result: "",
       },
       {
-        match: (a) => a[0] === "merge-base" && a.includes("--is-ancestor"),
-        error: new Error("not ancestor"),
+        match: (a) => a[0] === "for-each-ref",
+        result: "",
       },
     ]);
 
@@ -328,6 +328,90 @@ describe("integrity profiles", () => {
       expect((err as Error).message).toMatch(/git push/i);
       return true;
     });
+  });
+
+  it("refreshes remote-tracking refs and accepts detached HEAD on post-push", async () => {
+    const seen: string[][] = [];
+    const exec = scriptedExec([
+      {
+        match: (a) => a[0] === "status" && a.includes("--porcelain"),
+        result: "",
+      },
+      {
+        match: (a) => {
+          if (a[0] === "fetch") {
+            seen.push(a);
+            return true;
+          }
+          return false;
+        },
+        result: "",
+      },
+      {
+        match: (a) => a[0] === "for-each-ref",
+        result: "refs/remotes/origin/feature\n",
+      },
+    ]);
+
+    const result = await enforceIntegrityGates({
+      state: { ...baseState, branch: "HEAD" },
+      config: { requireCleanWorktree: true, requirePushedCommit: false },
+      profile: "post-push",
+      exec,
+    });
+    expect(result.skipped).toBe(false);
+    expect(seen).toEqual([["fetch", "--prune", "--no-tags", "origin"]]);
+  });
+
+  it("fails post-push when fetch fails", async () => {
+    const exec = scriptedExec([
+      {
+        match: (a) => a[0] === "status" && a.includes("--porcelain"),
+        result: "",
+      },
+      {
+        match: (a) => a[0] === "fetch",
+        error: new Error("could not fetch"),
+      },
+    ]);
+
+    await expect(
+      enforceIntegrityGates({
+        state: baseState,
+        config: { requireCleanWorktree: false, requirePushedCommit: false },
+        profile: "post-push",
+        exec,
+      }),
+    ).rejects.toSatisfy((err: unknown) => {
+      expect(err).toBeInstanceOf(GitIntegrityError);
+      expect((err as Error).message).toMatch(/fetch/i);
+      return true;
+    });
+  });
+
+  it("does not fetch for the developer profile", async () => {
+    const exec = scriptedExec([
+      {
+        match: (a) => a[0] === "status" && a.includes("--porcelain"),
+        result: "",
+      },
+      {
+        match: (a) => a.includes("@{u}"),
+        result: "origin/feature",
+      },
+      {
+        match: (a) => a[0] === "merge-base" && a.includes("--is-ancestor"),
+        result: "",
+      },
+    ]);
+
+    const result = await enforceIntegrityGates({
+      state: baseState,
+      config: { requireCleanWorktree: true, requirePushedCommit: true },
+      profile: "developer",
+      exec,
+    });
+    expect(result.skipped).toBe(false);
   });
 
   it("keeps developer pushed-commit behavior when yaml requires it", async () => {

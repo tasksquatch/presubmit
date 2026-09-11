@@ -514,7 +514,7 @@ describe("runCommand integrity profiles", () => {
     expect(runner).not.toHaveBeenCalled();
   });
 
-  it("publishes orchestrator attestation with installation + post-push", async () => {
+  it("labels orchestrator attestation for installation auth when integrity is skipped", async () => {
     const checks = mockChecks();
     const code = await runCommand({
       cwd: "/repo",
@@ -529,6 +529,74 @@ describe("runCommand integrity profiles", () => {
     const output = vi.mocked(checks.completeCheckRun).mock.calls[0]?.[0].output;
     expect(output?.summary).toContain("**Attestation:** `orchestrator`");
     expect(output?.summary).not.toMatch(/Developer/);
+  });
+
+  it("post-push publishes after fetch shows HEAD on a remote-tracking ref", async () => {
+    const fetchArgs: string[][] = [];
+    const exec: GitExec = async (args) => {
+      if (args[0] === "status") {
+        return "";
+      }
+      if (args[0] === "fetch") {
+        fetchArgs.push(args);
+        return "";
+      }
+      if (args[0] === "for-each-ref") {
+        return "refs/remotes/origin/feature\n";
+      }
+      throw new Error(`unexpected ${args.join(" ")}`);
+    };
+    const checks = mockChecks();
+    const runner = vi.fn(async () => okRun());
+    const code = await runCommand({
+      cwd: "/repo",
+      auth: "installation",
+      integrity: "post-push",
+      discover: async () => cleanState,
+      checksClient: checks,
+      exec,
+      runChecksFn: runner,
+    });
+    expect(code).toBe(ExitCode.Success);
+    expect(fetchArgs).toEqual([["fetch", "--prune", "--no-tags", "origin"]]);
+    expect(checks.createInProgressCheckRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Local Presubmit",
+        headSha: cleanState.headSha,
+      }),
+    );
+    const output = vi.mocked(checks.completeCheckRun).mock.calls[0]?.[0].output;
+    expect(output?.summary).toContain("**Attestation:** `orchestrator`");
+    expect(runner).toHaveBeenCalled();
+  });
+
+  it("post-push fails before Checks when the fetched remote does not contain HEAD", async () => {
+    const exec: GitExec = async (args) => {
+      if (args[0] === "status") {
+        return "";
+      }
+      if (args[0] === "fetch") {
+        return "";
+      }
+      if (args[0] === "for-each-ref") {
+        return "";
+      }
+      throw new Error(`unexpected ${args.join(" ")}`);
+    };
+    const checks = mockChecks();
+    const runner = vi.fn(async () => okRun());
+    const code = await runCommand({
+      cwd: "/repo",
+      auth: "installation",
+      integrity: "post-push",
+      discover: async () => cleanState,
+      checksClient: checks,
+      exec,
+      runChecksFn: runner,
+    });
+    expect(code).toBe(ExitCode.GitError);
+    expect(checks.createInProgressCheckRun).not.toHaveBeenCalled();
+    expect(runner).not.toHaveBeenCalled();
   });
 
   it("still bypasses clean and pushed gates with skipIntegrity", async () => {
