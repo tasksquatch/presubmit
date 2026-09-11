@@ -17,8 +17,13 @@ export function scrubPresubmitSecrets(
   env: NodeJS.ProcessEnv,
 ): NodeJS.ProcessEnv {
   const next: NodeJS.ProcessEnv = { ...env };
-  for (const key of SCRUBBED_PRESUBMIT_ENVS) {
-    delete next[key];
+  const blocked = new Set(
+    SCRUBBED_PRESUBMIT_ENVS.map((name) => name.toLowerCase()),
+  );
+  for (const key of Object.keys(next)) {
+    if (blocked.has(key.toLowerCase())) {
+      delete next[key];
+    }
   }
   return next;
 }

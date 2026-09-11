@@ -24,7 +24,7 @@ import {
   type CheckConclusion,
   type ChecksClient,
 } from "../github/index.js";
-import { ExitCode, error, info } from "../output/index.js";
+import { ExitCode, error, info, redactUnknown } from "../output/index.js";
 import {
   runChecks,
   type RunChecksOptions,
@@ -196,14 +196,14 @@ export async function runPresubmit(
       info(`Created Check Run ${checkRunId} (in_progress) for ${effectiveSha.slice(0, 12)}.`);
     } catch (err) {
       if (err instanceof AuthError) {
-        error(err.message);
+        error(redactUnknown(err));
         return ExitCode.AuthError;
       }
       if (err instanceof GitHubApiError) {
-        error(err.message);
+        error(redactUnknown(err));
         return ExitCode.GitHubError;
       }
-      error(err instanceof Error ? err.message : String(err));
+      error(redactUnknown(err));
       return ExitCode.GitHubError;
     }
   } else {
@@ -223,8 +223,7 @@ export async function runPresubmit(
       ...(options.spawnFn ? { spawnFn: options.spawnFn } : {}),
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    error(`Failed to start local runner: ${message}`);
+    error(`Failed to start local runner: ${redactUnknown(err)}`);
     if (publish && checks && checkRunId !== null && state.repo) {
       try {
         const durationMs = now() - startedAt;
@@ -243,11 +242,7 @@ export async function runPresubmit(
           }),
         });
       } catch (completeErr) {
-        error(
-          completeErr instanceof Error
-            ? completeErr.message
-            : String(completeErr),
-        );
+        error(redactUnknown(completeErr));
         return ExitCode.GitHubError;
       }
     }
@@ -279,7 +274,7 @@ export async function runPresubmit(
       });
       info(`Completed Check Run ${checkRunId} as ${conclusion}.`);
     } catch (err) {
-      error(err instanceof Error ? err.message : String(err));
+      error(redactUnknown(err));
       return ExitCode.GitHubError;
     }
   }

@@ -27,6 +27,7 @@ describe("redactSecrets", () => {
   it("redacts GitHub token prefixes", () => {
     expect(redactSecrets("token=ghs_shorttoken")).toBe("token=[redacted]");
     expect(redactSecrets("ghu_shorttoken")).toBe("[redacted]");
+    expect(redactSecrets("ghp_shorttoken")).toBe("[redacted]");
   });
 
   it("leaves ordinary GitHub API messages intact", () => {

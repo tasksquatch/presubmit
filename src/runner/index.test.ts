@@ -15,6 +15,17 @@ describe("scrubPresubmitSecrets", () => {
     expect(scrubbed.PRESUBMIT_GITHUB_PRIVATE_KEY).toBeUndefined();
     expect(scrubbed.PATH).toBe("/bin");
   });
+
+  it("scrubs secret keys regardless of casing", () => {
+    const scrubbed = scrubPresubmitSecrets({
+      presubmit_github_private_key: "secret",
+      Presubmit_Github_App_Id: "1",
+      PATH: "/bin",
+    });
+    expect(scrubbed.presubmit_github_private_key).toBeUndefined();
+    expect(scrubbed.Presubmit_Github_App_Id).toBeUndefined();
+    expect(scrubbed.PATH).toBe("/bin");
+  });
 });
 
 function fakeChild(options: {

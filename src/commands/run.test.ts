@@ -328,6 +328,60 @@ describe("runCommand installation auth", () => {
     expect(session.ensureAccessToken).not.toHaveBeenCalled();
   });
 
+  it("redacts token material in installation auth failures", async () => {
+    const { GitHubApiError } = await import("../github/index.js");
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((msg?: unknown) => {
+      errors.push(String(msg ?? ""));
+    });
+    try {
+      const code = await runCommand({
+        cwd: "/repo",
+        auth: "installation",
+        skipIntegrity: true,
+        discover: async () => cleanState,
+        installationAuth: async () => {
+          throw new GitHubApiError("mint failed ghp_shorttoken");
+        },
+        runChecksFn: async () => okRun(),
+      });
+      expect(code).toBe(ExitCode.GitHubError);
+      const text = errors.join("\n");
+      expect(text).toContain("[redacted]");
+      expect(text).not.toContain("ghp_shorttoken");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("redacts token material when Check Run completion fails", async () => {
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((msg?: unknown) => {
+      errors.push(String(msg ?? ""));
+    });
+    try {
+      const checks = mockChecks({
+        completeCheckRun: vi
+          .fn()
+          .mockRejectedValue(new Error("update failed ghp_shorttoken")),
+      });
+      const code = await runCommand({
+        cwd: "/repo",
+        auth: "installation",
+        skipIntegrity: true,
+        discover: async () => cleanState,
+        checksClient: checks,
+        runChecksFn: async () => okRun(),
+      });
+      expect(code).toBe(ExitCode.GitHubError);
+      const text = errors.join("\n");
+      expect(text).toContain("[redacted]");
+      expect(text).not.toContain("ghp_shorttoken");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("does not mint installation tokens when publish is disabled", async () => {
     const installationAuth = vi.fn();
     const session = mockSession();
