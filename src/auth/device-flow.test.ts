@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { OAuthError } from "./github-oauth.js";
 import { runDeviceFlow } from "./device-flow.js";
 import type { OAuthClient } from "./oauth-client.js";
+import { PRESUBMIT_APP_NAME } from "../github/app-info.js";
 
 function mockOAuth(partial: Partial<OAuthClient>): OAuthClient {
   return {
@@ -13,7 +14,44 @@ function mockOAuth(partial: Partial<OAuthClient>): OAuthClient {
   };
 }
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe("runDeviceFlow", () => {
+  it("default prompt warns about trusted install and App name", async () => {
+    const oauth = mockOAuth({
+      createDeviceCode: vi.fn().mockResolvedValue({
+        deviceCode: "device",
+        userCode: "ABCD-1234",
+        verificationUri: "https://github.com/login/device",
+        expiresIn: 900,
+        interval: 1,
+      }),
+      exchangeDeviceCode: vi.fn().mockResolvedValue({
+        accessToken: "ghu_access",
+      }),
+    });
+
+    const warns: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((msg?: unknown) => {
+      warns.push(String(msg ?? ""));
+    });
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await runDeviceFlow({
+      clientId: "Iv1.test",
+      oauth,
+      sleep: async () => undefined,
+      fetchUser: async () => ({ id: 1, login: "octocat" }),
+    });
+
+    expect(warns.some((w) => /trusted @tasksquatch\/presubmit/i.test(w))).toBe(
+      true,
+    );
+    expect(warns.some((w) => w.includes(PRESUBMIT_APP_NAME))).toBe(true);
+  });
+
   it("stores tokens and user after successful poll", async () => {
     const oauth = mockOAuth({
       createDeviceCode: vi.fn().mockResolvedValue({
