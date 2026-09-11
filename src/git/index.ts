@@ -17,7 +17,11 @@ export {
 export {
   enforceIntegrityGates,
   GitIntegrityError,
+  INTEGRITY_PROFILES,
+  resolveIntegrityRequirements,
   type IntegrityOptions,
+  type IntegrityProfile,
+  type IntegrityRequirements,
   type IntegrityResult,
 } from "./integrity.js";
 export {

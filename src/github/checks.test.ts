@@ -131,12 +131,33 @@ describe("buildCheckOutput", () => {
       login: "dev",
       durationMs: 1500,
       cliVersion: "0.1.3",
+      attestation: "local-developer",
     });
     expect(out.title).toBe("Local Presubmit passed");
     expect(out.summary).toContain("deadbeef");
+    expect(out.summary).toContain("**Attestation:** `local-developer`");
     expect(out.summary).toContain("@dev");
     expect(out.summary).toContain("0.1.3");
     expect(out.summary).toMatch(/not independent hosted verification/i);
+    expect(out).not.toHaveProperty("text");
+  });
+
+  it("labels orchestrator attestation and omits the Developer line", () => {
+    const out = buildCheckOutput({
+      checkName: "Local Presubmit",
+      conclusion: "success",
+      headSha: "deadbeef",
+      login: "dev",
+      durationMs: 1500,
+      cliVersion: "0.1.3",
+      attestation: "orchestrator",
+    });
+    expect(out.summary).toContain("**Attestation:** `orchestrator`");
+    expect(out.summary).not.toMatch(/Developer/);
+    expect(out.summary).not.toContain("@dev");
+    expect(out.summary).toMatch(/installation-auth run from automation/i);
+    expect(out.summary).toMatch(/not independent GitHub-hosted verification/i);
+    expect(out.summary).toMatch(/configured check name/i);
     expect(out).not.toHaveProperty("text");
   });
 
@@ -147,8 +168,10 @@ describe("buildCheckOutput", () => {
       headSha: "sha",
       durationMs: 10,
       cliVersion: "0.1.3",
+      attestation: "local-developer",
     });
     expect(out.title).toContain("failed");
+    expect(out.summary).toContain("**Attestation:** `local-developer`");
     expect(out).not.toHaveProperty("text");
   });
 });

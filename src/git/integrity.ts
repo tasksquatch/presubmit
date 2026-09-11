@@ -15,6 +15,10 @@ export class GitIntegrityError extends Error {
   }
 }
 
+/** CLI `--integrity` profiles. Default `developer` preserves yaml gates. */
+export const INTEGRITY_PROFILES = ["developer", "pre-push", "post-push"] as const;
+export type IntegrityProfile = (typeof INTEGRITY_PROFILES)[number];
+
 export interface IntegrityOptions {
   state: RepoState;
   config: Pick<
@@ -23,6 +27,8 @@ export interface IntegrityOptions {
   >;
   /** CLI `--sha` override (resolved against the repo). */
   shaOverride?: string;
+  /** CLI `--integrity`. Default `developer`. */
+  profile?: IntegrityProfile;
   skipIntegrity?: boolean;
   exec?: GitExec;
 }
@@ -33,15 +39,52 @@ export interface IntegrityResult {
   skipped: boolean;
 }
 
+export type IntegrityRequirements = Pick<
+  PresubmitConfig,
+  "requireCleanWorktree" | "requirePushedCommit"
+>;
+
 /**
- * Enforce clean-worktree and pushed-SHA gates.
- * `--skip-integrity` bypasses both; `--no-publish` does not.
+ * Map an integrity profile onto yaml gates.
+ * `pre-push` never requires remote; `post-push` always does.
+ * Both still honor yaml `requireCleanWorktree`.
+ */
+export function resolveIntegrityRequirements(
+  config: IntegrityRequirements,
+  profile: IntegrityProfile = "developer",
+): IntegrityRequirements {
+  switch (profile) {
+    case "pre-push":
+      return {
+        requireCleanWorktree: config.requireCleanWorktree,
+        requirePushedCommit: false,
+      };
+    case "post-push":
+      return {
+        requireCleanWorktree: config.requireCleanWorktree,
+        requirePushedCommit: true,
+      };
+    case "developer":
+      return {
+        requireCleanWorktree: config.requireCleanWorktree,
+        requirePushedCommit: config.requirePushedCommit,
+      };
+  }
+}
+
+/**
+ * Enforce clean-worktree and pushed-SHA gates for the selected profile.
+ * `--skip-integrity` bypasses both; SHA==HEAD still applies.
  */
 export async function enforceIntegrityGates(
   options: IntegrityOptions,
 ): Promise<IntegrityResult> {
   const exec = options.exec ?? defaultGitExec;
-  const { state, config } = options;
+  const { state } = options;
+  const gates = resolveIntegrityRequirements(
+    options.config,
+    options.profile ?? "developer",
+  );
 
   let effectiveSha = state.headSha;
   if (options.shaOverride?.trim()) {
@@ -62,7 +105,7 @@ export async function enforceIntegrityGates(
     return { effectiveSha, skipped: true };
   }
 
-  if (config.requireCleanWorktree) {
+  if (gates.requireCleanWorktree) {
     const status = await getWorktreeStatus(state.root, exec);
     if (status.trim() !== "") {
       throw new GitIntegrityError(
@@ -71,17 +114,28 @@ export async function enforceIntegrityGates(
     }
   }
 
-  if (config.requirePushedCommit) {
-    await assertShaPushed({
-      sha: effectiveSha,
-      state,
-      exec,
-    });
+  if (gates.requirePushedCommit) {
+    if ((options.profile ?? "developer") === "post-push") {
+      await assertShaOnFetchedRemote({
+        sha: effectiveSha,
+        state,
+        exec,
+      });
+    } else {
+      await assertShaPushed({
+        sha: effectiveSha,
+        state,
+        exec,
+      });
+    }
   }
 
   return { effectiveSha, skipped: false };
 }
 
+/**
+ * Developer / yaml gate: local remote-tracking refs only (no fetch).
+ */
 async function assertShaPushed(options: {
   sha: string;
   state: RepoState;
@@ -117,6 +171,59 @@ async function assertShaPushed(options: {
   throw new GitIntegrityError(
     `Cannot verify commit ${sha.slice(0, 12)} is on the remote. Set an upstream (e.g. \`git push -u ${state.remoteName} HEAD\`), ensure remote-tracking refs are current, then rerun.`,
   );
+}
+
+/**
+ * Post-push gate: refresh the named remote, then require some
+ * `refs/remotes/<remote>/*` ref to contain the SHA (detached HEAD included).
+ */
+async function assertShaOnFetchedRemote(options: {
+  sha: string;
+  state: RepoState;
+  exec: GitExec;
+}): Promise<void> {
+  const { sha, state, exec } = options;
+  try {
+    await exec(["fetch", "--prune", "--no-tags", state.remoteName], state.root);
+  } catch {
+    throw new GitIntegrityError(
+      `Cannot fetch ${state.remoteName} to verify commit ${sha.slice(0, 12)} is on the remote. Check network and credentials, then rerun.`,
+    );
+  }
+
+  const containing = await remoteTrackingRefsContaining(options);
+  if (containing.length > 0) {
+    return;
+  }
+
+  throw new GitIntegrityError(
+    `Commit ${sha.slice(0, 12)} is not on ${state.remoteName} after fetch. Run \`git push\` then rerun \`presubmit run\` (no auto-push).`,
+  );
+}
+
+async function remoteTrackingRefsContaining(options: {
+  sha: string;
+  state: RepoState;
+  exec: GitExec;
+}): Promise<string[]> {
+  const { sha, state, exec } = options;
+  try {
+    const stdout = await exec(
+      [
+        "for-each-ref",
+        `--contains=${sha}`,
+        "--format=%(refname)",
+        `refs/remotes/${state.remoteName}/`,
+      ],
+      state.root,
+    );
+    return stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  } catch {
+    return [];
+  }
 }
 
 async function refExists(
