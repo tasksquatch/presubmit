@@ -29,6 +29,8 @@ export interface PresubmitConfig {
   requirePushedCommit: boolean;
   /** Deprecated: max lines retained locally; never uploaded. */
   maxLogLines: number;
+  /** Attach truncated runner output to failing Check Runs. */
+  publishFailureOutput: boolean;
 }
 
 export const DEFAULT_CONFIG: PresubmitConfig = {
@@ -39,6 +41,7 @@ export const DEFAULT_CONFIG: PresubmitConfig = {
   requireCleanWorktree: true,
   requirePushedCommit: true,
   maxLogLines: 100,
+  publishFailureOutput: true,
 };
 
 interface RawPresubmitConfig {
@@ -56,6 +59,8 @@ interface RawPresubmitConfig {
   require_pushed_commit?: boolean;
   maxLogLines?: number;
   max_log_lines?: number;
+  publishFailureOutput?: boolean;
+  publish_failure_output?: boolean;
 }
 
 function resolveVersion(raw: RawPresubmitConfig): number {
@@ -96,7 +101,26 @@ function normalize(raw: RawPresubmitConfig): PresubmitConfig {
       raw.require_pushed_commit ??
       DEFAULT_CONFIG.requirePushedCommit,
     maxLogLines,
+    publishFailureOutput: resolveBoolean(
+      raw.publishFailureOutput ?? raw.publish_failure_output,
+      DEFAULT_CONFIG.publishFailureOutput,
+      "publishFailureOutput",
+    ),
   };
+}
+
+function resolveBoolean(
+  value: unknown,
+  fallback: boolean,
+  name: string,
+): boolean {
+  if (value === undefined) {
+    return fallback;
+  }
+  if (typeof value !== "boolean") {
+    throw new ConfigError(`${name} must be a boolean.`);
+  }
+  return value;
 }
 
 /**

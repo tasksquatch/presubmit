@@ -19,6 +19,7 @@ describe("loadConfig", () => {
     expect(config.runner).toBe("just");
     expect(config.runnerArgs).toEqual(["presubmit-local"]);
     expect(config.maxLogLines).toBe(100);
+    expect(config.publishFailureOutput).toBe(true);
   });
 
   it("parses a YAML config file", async () => {
@@ -44,6 +45,38 @@ maxLogLines: 50
     expect(config.requireCleanWorktree).toBe(false);
     expect(config.maxLogLines).toBe(50);
     expect(config.requirePushedCommit).toBe(true);
+  });
+
+  it("parses publishFailureOutput false", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "presubmit-cfg-"));
+    await writeFile(
+      path.join(dir, ".presubmit.yaml"),
+      `publishFailureOutput: false\n`,
+      "utf8",
+    );
+    const { config } = await loadConfig(dir);
+    expect(config.publishFailureOutput).toBe(false);
+  });
+
+  it("parses publish_failure_output snake_case", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "presubmit-cfg-"));
+    await writeFile(
+      path.join(dir, ".presubmit.yaml"),
+      `publish_failure_output: false\n`,
+      "utf8",
+    );
+    const { config } = await loadConfig(dir);
+    expect(config.publishFailureOutput).toBe(false);
+  });
+
+  it("rejects non-boolean publishFailureOutput", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "presubmit-cfg-"));
+    await writeFile(
+      path.join(dir, ".presubmit.yaml"),
+      `publishFailureOutput: "yes"\n`,
+      "utf8",
+    );
+    await expect(loadConfig(dir)).rejects.toBeInstanceOf(ConfigError);
   });
 
   it("defaults version to 1 when omitted", async () => {

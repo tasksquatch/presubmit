@@ -168,9 +168,29 @@ describe("runCommand Check Run lifecycle", () => {
     expect(checks.completeCheckRun).toHaveBeenCalledWith(
       expect.objectContaining({
         conclusion: "failure",
-        output: expect.not.objectContaining({ text: expect.anything() }),
       }),
     );
+    const output = vi.mocked(checks.completeCheckRun).mock.calls[0]?.[0].output;
+    expect(output?.text).toContain("test failed");
+    expect(output?.summary).toMatch(/Truncated runner output is attached/);
+  });
+
+  it("redacts PEMs in published failure text", async () => {
+    const checks = mockChecks();
+    const pem = "-----BEGIN RSA PRIVATE KEY-----\nnot-a-real-key\n-----END RSA PRIVATE KEY-----";
+    const code = await runCommand({
+      cwd: "/repo",
+      skipIntegrity: true,
+      discover: async () => cleanState,
+      session: mockSession(),
+      checksClient: checks,
+      runChecksFn: async () => okRun({ exitCode: 1, capturedLog: pem }),
+    });
+    expect(code).toBe(ExitCode.ChecksFailed);
+    const output = vi.mocked(checks.completeCheckRun).mock.calls[0]?.[0].output;
+    expect(output?.text).toBeDefined();
+    expect(output?.text).not.toContain("not-a-real-key");
+    expect(output?.text).toContain("[redacted]");
   });
 
   it("returns Cancelled and completes cancelled", async () => {
@@ -269,6 +289,7 @@ describe("createProgram run options", () => {
       expect.arrayContaining([
         "--sha",
         "--no-publish",
+        "--no-failure-output",
         "--skip-integrity",
         "--integrity",
         "--auth",
@@ -440,22 +461,110 @@ describe("runCommand installation auth", () => {
 });
 
 describe("publication privacy", () => {
-  it.each(["failure", "cancelled", "spawn-error"])("never uploads diagnostic output for %s", async (scenario) => {
+  it("does not attach runner output on success", async () => {
     const marker = "SYNTHETIC_PRIVATE_DIAGNOSTIC";
     const checks = mockChecks();
     const code = await runCommand({
       cwd: "/repo", skipIntegrity: true, discover: async () => cleanState,
       session: mockSession(), checksClient: checks,
+      runChecksFn: async () => okRun({ stdout: marker, stderr: marker, capturedLog: marker }),
+    });
+    expect(code).toBe(ExitCode.Success);
+    const output = vi.mocked(checks.completeCheckRun).mock.calls[0][0].output;
+    expect(output).not.toHaveProperty("text");
+    expect(JSON.stringify(output)).not.toContain(marker);
+  });
+
+  it("does not attach runner output on cancelled", async () => {
+    const marker = "SYNTHETIC_PRIVATE_DIAGNOSTIC";
+    const checks = mockChecks();
+    const code = await runCommand({
+      cwd: "/repo", skipIntegrity: true, discover: async () => cleanState,
+      session: mockSession(), checksClient: checks,
+      runChecksFn: async () => okRun({ exitCode: 1, cancelled: true, stdout: marker, stderr: marker, capturedLog: marker }),
+    });
+    expect(code).toBe(ExitCode.Cancelled);
+    const output = vi.mocked(checks.completeCheckRun).mock.calls[0][0].output;
+    expect(output).not.toHaveProperty("text");
+    expect(JSON.stringify(output)).not.toContain(marker);
+    expect(output.summary).toMatch(/cancelled/i);
+  });
+
+  it("attaches truncated capturedLog on failure", async () => {
+    const marker = "SYNTHETIC_PRIVATE_DIAGNOSTIC";
+    const checks = mockChecks();
+    const code = await runCommand({
+      cwd: "/repo", skipIntegrity: true, discover: async () => cleanState,
+      session: mockSession(), checksClient: checks,
+      runChecksFn: async () => okRun({ exitCode: 1, stdout: marker, stderr: marker, capturedLog: marker }),
+    });
+    expect(code).toBe(ExitCode.ChecksFailed);
+    const output = vi.mocked(checks.completeCheckRun).mock.calls[0][0].output;
+    expect(output.text).toContain(marker);
+  });
+
+  it("attaches redacted spawn-error details on runner start failure", async () => {
+    const checks = mockChecks();
+    const code = await runCommand({
+      cwd: "/repo", skipIntegrity: true, discover: async () => cleanState,
+      session: mockSession(), checksClient: checks,
       runChecksFn: async () => {
-        if (scenario === "spawn-error") throw new Error(marker);
-        return okRun({ exitCode: 1, cancelled: scenario === "cancelled", stdout: marker, stderr: marker, capturedLog: marker });
+        throw new Error("start failed ghp_shorttoken");
       },
     });
-    expect(code).toBe(scenario === "spawn-error" ? ExitCode.ConfigError : scenario === "cancelled" ? ExitCode.Cancelled : ExitCode.ChecksFailed);
-    const calls = vi.mocked(checks.completeCheckRun).mock.calls;
-    expect(calls).toHaveLength(1);
-    expect(calls[0][0].output).not.toHaveProperty("text");
-    expect(JSON.stringify(calls)).not.toContain(marker);
+    expect(code).toBe(ExitCode.ConfigError);
+    const output = vi.mocked(checks.completeCheckRun).mock.calls[0][0].output;
+    expect(output.text).toBeDefined();
+    expect(output.text).not.toContain("ghp_shorttoken");
+    expect(output.text).toContain("[redacted]");
+    expect(output.summary).toMatch(/Failed to start local runner/);
+  });
+
+  it("omits output.text when failureOutput is false", async () => {
+    const marker = "SYNTHETIC_PRIVATE_DIAGNOSTIC";
+    const checks = mockChecks();
+    const code = await runCommand({
+      cwd: "/repo", skipIntegrity: true, discover: async () => cleanState,
+      session: mockSession(), checksClient: checks, failureOutput: false,
+      runChecksFn: async () => okRun({ exitCode: 1, capturedLog: marker }),
+    });
+    expect(code).toBe(ExitCode.ChecksFailed);
+    const output = vi.mocked(checks.completeCheckRun).mock.calls[0][0].output;
+    expect(output).not.toHaveProperty("text");
+    expect(JSON.stringify(output)).not.toContain(marker);
+    expect(output.summary).toMatch(/Local checks failed \(exit 1\)/);
+    expect(output.summary).not.toMatch(/Truncated runner output is attached/);
+  });
+
+  it("omits output.text when yaml publishFailureOutput is false", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "presubmit-run-"));
+    await writeFile(path.join(dir, ".presubmit.yaml"), "publishFailureOutput: false\n", "utf8");
+    const marker = "SYNTHETIC_PRIVATE_DIAGNOSTIC";
+    const checks = mockChecks();
+    const code = await runCommand({
+      cwd: dir, skipIntegrity: true, discover: async () => cleanState,
+      session: mockSession(), checksClient: checks,
+      runChecksFn: async () => okRun({ exitCode: 1, capturedLog: marker }),
+    });
+    expect(code).toBe(ExitCode.ChecksFailed);
+    const output = vi.mocked(checks.completeCheckRun).mock.calls[0][0].output;
+    expect(output).not.toHaveProperty("text");
+    expect(JSON.stringify(output)).not.toContain(marker);
+  });
+
+  it("lets --no-failure-output win over yaml true", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "presubmit-run-"));
+    await writeFile(path.join(dir, ".presubmit.yaml"), "publishFailureOutput: true\n", "utf8");
+    const marker = "SYNTHETIC_PRIVATE_DIAGNOSTIC";
+    const checks = mockChecks();
+    const code = await runCommand({
+      cwd: dir, skipIntegrity: true, discover: async () => cleanState,
+      session: mockSession(), checksClient: checks, failureOutput: false,
+      runChecksFn: async () => okRun({ exitCode: 1, capturedLog: marker }),
+    });
+    expect(code).toBe(ExitCode.ChecksFailed);
+    const output = vi.mocked(checks.completeCheckRun).mock.calls[0][0].output;
+    expect(output).not.toHaveProperty("text");
   });
 
   it.each([false, true])("rejects SHA mismatch before auth, publication or execution (skip=%s)", async (skipIntegrity) => {

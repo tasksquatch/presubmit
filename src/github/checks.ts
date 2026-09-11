@@ -14,6 +14,8 @@ export type CheckConclusion = "success" | "failure" | "cancelled";
 export interface CheckRunOutput {
   title: string;
   summary: string;
+  /** Truncated failure details; omitted on success and when opt-out is set. */
+  text?: string;
 }
 
 export interface CreateInProgressCheckRunParams {
@@ -99,6 +101,7 @@ export async function completeCheckRun(
       output: {
         title: params.output.title,
         summary: params.output.summary,
+        ...(params.output.text !== undefined ? { text: params.output.text } : {}),
       },
     });
   } catch (err) {

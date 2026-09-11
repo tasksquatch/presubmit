@@ -29,6 +29,9 @@ export {
 } from "./checks.js";
 export {
   buildCheckOutput,
+  GITHUB_CHECK_OUTPUT_TEXT_MAX,
+  prepareFailureOutputText,
+  stripAnsi,
   type AttestationMode,
   type BuildCheckOutputParams,
 } from "./summary.js";
