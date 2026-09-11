@@ -14,6 +14,7 @@ import {
   GitDiscoveryError,
   GitIntegrityError,
   type GitExec,
+  type IntegrityProfile,
   type RepoState,
 } from "../git/index.js";
 import {
@@ -21,6 +22,7 @@ import {
   createChecksClient,
   createOctokit,
   GitHubApiError,
+  type AttestationMode,
   type CheckConclusion,
   type ChecksClient,
 } from "../github/index.js";
@@ -41,6 +43,8 @@ export interface RunPresubmitOptions {
   publish?: boolean;
   /** `--skip-integrity` testing escape hatch. */
   skipIntegrity?: boolean;
+  /** CLI `--integrity`. Default `developer`. */
+  integrity?: IntegrityProfile;
   /** Explicit auth mode. Default `device`; never auto-selected from env. */
   auth?: AuthMode;
   env?: NodeJS.ProcessEnv;
@@ -73,6 +77,16 @@ export async function runPresubmit(
   const now = options.now ?? Date.now;
   const auth: AuthMode = options.auth ?? "device";
   const env = options.env ?? process.env;
+  const integrity: IntegrityProfile = options.integrity ?? "developer";
+  const attestation: AttestationMode =
+    auth === "installation" ? "orchestrator" : "local-developer";
+
+  if (publish && integrity === "pre-push") {
+    error(
+      "Integrity profile pre-push cannot publish a Check Run. Use --no-publish, or use --integrity post-push after the commit is on the remote.",
+    );
+    return ExitCode.GitError;
+  }
 
   let config;
   try {
@@ -112,18 +126,21 @@ export async function runPresubmit(
 
   let effectiveSha: string;
   try {
-    const integrity = await enforceIntegrityGates({
+    const integrityResult = await enforceIntegrityGates({
       state,
       config,
       shaOverride: options.sha,
+      profile: integrity,
       skipIntegrity: options.skipIntegrity,
       exec: options.exec,
     });
-    effectiveSha = integrity.effectiveSha;
-    if (integrity.skipped) {
+    effectiveSha = integrityResult.effectiveSha;
+    if (integrityResult.skipped) {
       info("Integrity gates skipped (--skip-integrity).");
     } else {
-      info(`Integrity OK for ${effectiveSha.slice(0, 12)}.`);
+      info(
+        `Integrity OK for ${effectiveSha.slice(0, 12)} (profile ${integrity}).`,
+      );
     }
   } catch (err) {
     const message =
@@ -239,6 +256,7 @@ export async function runPresubmit(
             login,
             durationMs,
             cliVersion: VERSION,
+            attestation,
           }),
         });
       } catch (completeErr) {
@@ -270,6 +288,7 @@ export async function runPresubmit(
           login,
           durationMs,
           cliVersion: VERSION,
+          attestation,
         }),
       });
       info(`Completed Check Run ${checkRunId} as ${conclusion}.`);

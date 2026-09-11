@@ -40,7 +40,7 @@ To run checks in CI without publishing a separate Check Run, use `--no-publish`.
 - run: npx --no-install presubmit run --no-publish
 ```
 
-`--no-publish` does not access the credential store, so CI does not need `libsecret` or a Secret Service session for that path. Install the configured runner (such as `just`) and its check dependencies separately. The normal clean-worktree and pushed-commit gates still apply: run from the repository root, ensure the checkout is clean, and fetch the remote-tracking refs needed to verify HEAD. Pull-request merge checkouts may need additional Git setup to satisfy those gates.
+`--no-publish` does not access the credential store, so CI does not need `libsecret` or a Secret Service session for that path. Install the configured runner (such as `just`) and its check dependencies separately. Without `--integrity pre-push`, the default `developer` profile still applies: run from the repository root, ensure the checkout is clean, and fetch the remote-tracking refs needed to verify HEAD. Pull-request merge checkouts may need additional Git setup to satisfy those gates. To fail-fast before push, use `--no-publish --integrity pre-push` (see [Automation contract](#automation-contract)).
 
 To publish a Check Run from automation without device-flow or a keyring, use GitHub App **installation** authentication:
 
@@ -49,7 +49,7 @@ export PRESUBMIT_GITHUB_APP_ID="<app-id>"
 export PRESUBMIT_GITHUB_INSTALLATION_ID="<installation-id>"
 export PRESUBMIT_GITHUB_PRIVATE_KEY_PATH=/path/to/presubmit-app.pem
 # Or: PRESUBMIT_GITHUB_PRIVATE_KEY with the PEM contents (overrides the path).
-npx --no-install presubmit run --auth installation
+npx --no-install presubmit run --auth installation --integrity post-push
 ```
 
 `--auth installation` is explicit. Default `presubmit run` still uses device-flow credentials from the OS keyring; leftover installation env vars do not change that path. Diagnose installation credentials with `presubmit doctor --auth installation` or `presubmit auth status --auth installation`. `presubmit doctor` / `auth status` without `--auth` use installation diagnostics automatically when the App ID, installation ID, and private key (or key path) are all set.
@@ -74,12 +74,46 @@ Install the **Tasksquatch Presubmit** GitHub App on the repositories where you i
 |--------|----------|
 | `--sha <revision>` | Assert that the revision resolves to checked-out HEAD; a different commit is rejected |
 | `--no-publish` | Run checks without authentication or GitHub publication; integrity gates still apply |
+| `--integrity <profile>` | `developer` (default): honor yaml clean + pushed gates. `pre-push`: fail-fast without requiring remote. `post-push`: require SHA on remote. See [Automation contract](#automation-contract) |
 | `--auth <mode>` | `device` (default): OS keyring session. `installation`: GitHub App installation token from env |
-| `--skip-integrity` | For testing: bypass clean-worktree and pushed-commit gates; SHA equality still applies |
+| `--skip-integrity` | For testing: bypass clean-worktree and pushed-commit gates; SHA equality still applies. Not an automation profile |
 
 `presubmit doctor` and `presubmit auth status` also accept `--auth`. Their default is `auto` (installation diagnostics when installation env is complete or partial; otherwise device-flow). Pass `--auth device` or `--auth installation` to force one path.
 
-By default the worktree must be clean and HEAD must be present in local remote-tracking refs. Keep those refs current; these checks are local safeguards, not independent proof of remote state. To test another commit, check it out first.
+By default (`--integrity developer`) the worktree must be clean and HEAD must be present in local remote-tracking refs. Keep those refs current; these checks are local safeguards, not independent proof of remote state. To test another commit, check it out first.
+
+## Automation contract
+
+Unattended callers should pin to this CLI surface. Human `presubmit run` is unchanged.
+
+| Mode | Invocation | Auth | Integrity |
+|------|------------|------|-----------|
+| Human / default | `presubmit run` | device (keyring) | `developer`: honor yaml `requireCleanWorktree` and `requirePushedCommit` |
+| Automation fail-fast | `presubmit run --no-publish --integrity pre-push` | none | yaml clean-worktree; do **not** require the commit on the remote |
+| Automation attest | `presubmit run --auth installation --integrity post-push [--sha <head>]` | installation env (below) | HEAD equals intended SHA; **require** the SHA on the remote |
+
+`--skip-integrity` is a testing escape hatch, not an automation profile. SHA equality (`--sha` must resolve to checked-out HEAD) always applies.
+
+Auth rules:
+
+- `--no-publish` never authenticates and does not read the credential store or installation env.
+- Publishing with `--auth installation` requires `PRESUBMIT_GITHUB_APP_ID`, `PRESUBMIT_GITHUB_INSTALLATION_ID`, and `PRESUBMIT_GITHUB_PRIVATE_KEY` or `PRESUBMIT_GITHUB_PRIVATE_KEY_PATH`. `PRESUBMIT_GITHUB_PRIVATE_KEY` overrides the path when both are set.
+- Default `presubmit run` uses device-flow credentials from the OS keyring. Leftover installation env vars do not change that path.
+- `--integrity pre-push` cannot publish a Check Run (GitHub needs the SHA on the remote). Use `--no-publish`, or `--integrity post-push` after push. That combination exits **4**.
+
+Check Run summaries include `- **Attestation:** \`local-developer\`` for device-flow publish and `- **Attestation:** \`orchestrator\`` for installation-auth publish. The developer `@login` line is omitted in orchestrator mode.
+
+Exit codes are part of this contract:
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Checks failed |
+| 2 | Configuration or runner-start error |
+| 3 | Authentication error |
+| 4 | Git or repository-state error |
+| 5 | GitHub publication or API error |
+| 6 | Interrupted or cancelled |
 
 ## Configuration
 
@@ -97,11 +131,11 @@ requirePushedCommit: true
 
 `maxLogLines` remains a deprecated compatibility setting for local capture only (default 100; integer 0–65536). It never enables uploads. Each retained stdout, stderr, and combined output tail is capped at 64 KiB, while full output streams to the terminal.
 
-GitHub receives only the check name, commit, developer identity, duration, CLI version, and conclusion. Runner logs and runner-start error details are never attached to Check Runs. Terminal output may still contain sensitive information; treat externally collected terminal/CI logs accordingly. Do not put secrets in check names or other published metadata.
+GitHub receives only the check name, commit, attestation mode (`local-developer` or `orchestrator`), optional developer identity, duration, CLI version, and conclusion. Runner logs and runner-start error details are never attached to Check Runs. Terminal output may still contain sensitive information; treat externally collected terminal/CI logs accordingly. Do not put secrets in check names or other published metadata.
 
 ## Trust and security
 
-Local Presubmit records developer attestation. The machine, configuration, executable, and token are under developer control. A successful check is not independent verification; do not treat a green Local Presubmit Check Run as a merge gate for security-sensitive decisions or releases without separate trusted hosted validation.
+Local Presubmit records attestation, not independent GitHub-hosted verification. Device-flow Check Runs are labeled `local-developer` (laptop). Installation-auth Check Runs are labeled `orchestrator`. Operators may require the orchestrator-labeled check as a merge gate; do not treat laptop attestation as a security gate for releases. The machine, configuration, executable, and token remain under the runner's control.
 
 The configured command executes with your local user privileges and inherited environment, except that Presubmit strips App private-key, App ID, installation ID, and client-secret variables before spawning the recipe. The installation access token is held in memory only and is never exported to the child. The recipe is not otherwise sandboxed. Run untrusted contributions only in an isolated environment without sensitive credentials or access to private systems. Review dependency and runner changes before executing them.
 
@@ -114,6 +148,8 @@ Tokens are stored through the OS credential store. `presubmit logout` clears loc
 Package releases are published to the npmjs registry (`@tasksquatch/presubmit`) from GitHub Actions using [trusted publishing](https://docs.npmjs.com/trusted-publishers/) with automatic provenance. Maintainers publish by pushing an immutable version tag (for example `v0.1.3`) after configuring the npm Trusted Publisher for workflow `.github/workflows/publish.yml`. Do not move existing release tags. Prefer reviewing provenance attestations for installs once a registry release exists.
 
 ## Exit codes
+
+The codes below match the [Automation contract](#automation-contract) table.
 
 | Code | Meaning |
 |------|---------|

@@ -9,6 +9,7 @@ import { loginCommand } from "./commands/login.js";
 import { logoutCommand } from "./commands/logout.js";
 import { runCommand } from "./commands/run.js";
 import type { AuthMode, AuthModeOption } from "./auth/index.js";
+import { INTEGRITY_PROFILES, type IntegrityProfile } from "./git/index.js";
 import { ExitCode } from "./output/index.js";
 import { VERSION } from "./version.js";
 
@@ -49,11 +50,20 @@ export function createProgram(): Command {
       "--skip-integrity",
       "Skip clean-worktree and pushed-SHA gates (testing only)",
     )
+    .addOption(
+      new Option(
+        "--integrity <profile>",
+        "Integrity profile: developer (default), pre-push, or post-push",
+      )
+        .choices([...INTEGRITY_PROFILES])
+        .default("developer"),
+    )
     .addOption(runAuthOption())
     .action(async (opts: {
       sha?: string;
       publish?: boolean;
       skipIntegrity?: boolean;
+      integrity?: IntegrityProfile;
       auth?: AuthMode;
     }) => {
       const code = await runCommand({
@@ -61,6 +71,7 @@ export function createProgram(): Command {
         // Commander sets publish=false when --no-publish is passed.
         publish: opts.publish,
         skipIntegrity: opts.skipIntegrity,
+        integrity: opts.integrity,
         auth: opts.auth,
       });
       process.exitCode = code;

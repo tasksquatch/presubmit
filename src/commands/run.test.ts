@@ -148,6 +148,9 @@ describe("runCommand Check Run lifecycle", () => {
     expect(checks.completeCheckRun).toHaveBeenCalledWith(
       expect.objectContaining({ conclusion: "success" }),
     );
+    const output = vi.mocked(checks.completeCheckRun).mock.calls[0]?.[0].output;
+    expect(output?.summary).toContain("**Attestation:** `local-developer`");
+    expect(output?.summary).toMatch(/Developer/);
   });
 
   it("returns ChecksFailed and completes failure", async () => {
@@ -267,9 +270,12 @@ describe("createProgram run options", () => {
         "--sha",
         "--no-publish",
         "--skip-integrity",
+        "--integrity",
         "--auth",
       ]),
     );
+    const integrity = run!.options.find((o) => o.long === "--integrity");
+    expect(integrity?.argChoices).toEqual(["developer", "pre-push", "post-push"]);
   });
 });
 
@@ -412,6 +418,7 @@ describe("runCommand installation auth", () => {
     });
     const output = vi.mocked(checks.completeCheckRun).mock.calls[0]?.[0].output;
     expect(output?.summary).not.toMatch(/Developer/);
+    expect(output?.summary).toContain("**Attestation:** `orchestrator`");
   });
 
   it("forwards env to the runner so secrets can be scrubbed", async () => {
@@ -463,5 +470,79 @@ describe("publication privacy", () => {
     expect(session.ensureAccessToken).not.toHaveBeenCalled();
     expect(checks.createInProgressCheckRun).not.toHaveBeenCalled();
     expect(runner).not.toHaveBeenCalled();
+  });
+});
+
+describe("runCommand integrity profiles", () => {
+  it("fail-fast pre-push succeeds without a remote-tracking SHA", async () => {
+    const exec: GitExec = async (args) => {
+      if (args[0] === "status") {
+        return "";
+      }
+      throw new Error(`unexpected ${args.join(" ")}`);
+    };
+    const runner = vi.fn(async () => okRun());
+    const code = await runCommand({
+      cwd: "/repo",
+      publish: false,
+      integrity: "pre-push",
+      discover: async () => cleanState,
+      exec,
+      runChecksFn: runner,
+    });
+    expect(code).toBe(ExitCode.Success);
+    expect(runner).toHaveBeenCalled();
+  });
+
+  it("rejects pre-push with publish before auth or Checks", async () => {
+    const checks = mockChecks();
+    const session = mockSession();
+    const runner = vi.fn(async () => okRun());
+    const discover = vi.fn(async () => cleanState);
+    const code = await runCommand({
+      cwd: "/repo",
+      integrity: "pre-push",
+      discover,
+      session,
+      checksClient: checks,
+      runChecksFn: runner,
+    });
+    expect(code).toBe(ExitCode.GitError);
+    expect(discover).not.toHaveBeenCalled();
+    expect(session.ensureAccessToken).not.toHaveBeenCalled();
+    expect(checks.createInProgressCheckRun).not.toHaveBeenCalled();
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("publishes orchestrator attestation with installation + post-push", async () => {
+    const checks = mockChecks();
+    const code = await runCommand({
+      cwd: "/repo",
+      auth: "installation",
+      integrity: "post-push",
+      skipIntegrity: true,
+      discover: async () => cleanState,
+      checksClient: checks,
+      runChecksFn: async () => okRun(),
+    });
+    expect(code).toBe(ExitCode.Success);
+    const output = vi.mocked(checks.completeCheckRun).mock.calls[0]?.[0].output;
+    expect(output?.summary).toContain("**Attestation:** `orchestrator`");
+    expect(output?.summary).not.toMatch(/Developer/);
+  });
+
+  it("still bypasses clean and pushed gates with skipIntegrity", async () => {
+    const code = await runCommand({
+      cwd: "/repo",
+      skipIntegrity: true,
+      integrity: "post-push",
+      publish: false,
+      discover: async () => cleanState,
+      exec: async () => {
+        throw new GitIntegrityError("should not run");
+      },
+      runChecksFn: async () => okRun(),
+    });
+    expect(code).toBe(ExitCode.Success);
   });
 });

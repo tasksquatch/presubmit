@@ -27,4 +27,8 @@ export {
   type CompleteCheckRunParams,
   type CreateInProgressCheckRunParams,
 } from "./checks.js";
-export { buildCheckOutput, type BuildCheckOutputParams } from "./summary.js";
+export {
+  buildCheckOutput,
+  type AttestationMode,
+  type BuildCheckOutputParams,
+} from "./summary.js";

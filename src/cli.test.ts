@@ -25,6 +25,12 @@ describe("createProgram", () => {
 
     const runAuth = run?.options.find((o) => o.long === "--auth");
     expect(runAuth?.argChoices).toEqual(["device", "installation"]);
+    const runIntegrity = run?.options.find((o) => o.long === "--integrity");
+    expect(runIntegrity?.argChoices).toEqual([
+      "developer",
+      "pre-push",
+      "post-push",
+    ]);
     const doctorAuth = doctor?.options.find((o) => o.long === "--auth");
     expect(doctorAuth?.argChoices).toEqual(["auto", "device", "installation"]);
   });
