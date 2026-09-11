@@ -1,6 +1,6 @@
 {
   "name": "@tasksquatch/presubmit",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Local Presubmit CLI to run repo checks and publish a GitHub Check Run",
   "keywords": [
     "presubmit",
@@ -28,8 +28,9 @@
     "SECURITY.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "rm -rf dist && tsc -p tsconfig.json",
     "prepare": "npm run build",
+    "prepublishOnly": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
@@ -38,7 +39,7 @@
     "presubmit": "tsx src/cli.ts"
   },
   "engines": {
-    "node": "^22.13.0 || >=24.0.0"
+    "node": "^24.0.0"
   },
   "dependencies": {
     "@napi-rs/keyring": "^2.0.0",
@@ -57,6 +58,10 @@
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.70.0",
     "vitest": "^5.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "allowScripts": {
     "esbuild@0.28.2": true

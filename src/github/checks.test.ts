@@ -130,12 +130,12 @@ describe("buildCheckOutput", () => {
       headSha: "deadbeef",
       login: "dev",
       durationMs: 1500,
-      cliVersion: "0.1.2",
+      cliVersion: "0.1.3",
     });
     expect(out.title).toBe("Local Presubmit passed");
     expect(out.summary).toContain("deadbeef");
     expect(out.summary).toContain("@dev");
-    expect(out.summary).toContain("0.1.2");
+    expect(out.summary).toContain("0.1.3");
     expect(out.summary).toMatch(/not independent hosted verification/i);
     expect(out).not.toHaveProperty("text");
   });
@@ -146,7 +146,7 @@ describe("buildCheckOutput", () => {
       conclusion: "failure",
       headSha: "sha",
       durationMs: 10,
-      cliVersion: "0.1.2",
+      cliVersion: "0.1.3",
     });
     expect(out.title).toContain("failed");
     expect(out).not.toHaveProperty("text");

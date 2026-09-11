@@ -4,7 +4,10 @@ import {
   type AuthSession,
   type CredentialStore,
 } from "../auth/index.js";
-import { ExitCode, error, info } from "../output/index.js";
+import { ExitCode, error, info, warn } from "../output/index.js";
+
+const GITHUB_REVOKE_DOCS_URL =
+  "https://docs.github.com/en/apps/using-github-apps/reviewing-and-revoking-authorization-of-github-apps";
 
 export interface LogoutCommandOptions {
   session?: AuthSession;
@@ -29,6 +32,9 @@ export async function logoutCommand(
       info("Logged out and revoked GitHub token.");
     } else {
       info("Logged out (local credentials cleared).");
+      warn(
+        `GitHub authorization remains until you revoke it under Settings → Applications → Authorized GitHub Apps. See ${GITHUB_REVOKE_DOCS_URL}`,
+      );
     }
     return ExitCode.Success;
   } catch (err) {
