@@ -187,7 +187,6 @@ export async function doctorCommand(
     ...DEFAULT_CONFIG,
     runnerArgs: [...DEFAULT_CONFIG.runnerArgs],
   };
-  let configPath: string | null = null;
 
   if (gitOk) {
     try {
@@ -238,7 +237,7 @@ export async function doctorCommand(
       ? await opts.loadConfigFn(state?.root ?? cwd)
       : await loadConfig(state?.root ?? cwd);
     config = loaded.config;
-    configPath = loaded.path;
+    const configPath = loaded.path;
     record({
       name: "config",
       status: "ok",

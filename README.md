@@ -4,7 +4,7 @@ Run a repository's local checks and publish a GitHub Check Run named **Local Pre
 
 ## Installation
 
-Requires Node.js 22 or later. Install the public Git release over HTTPS:
+Requires Node.js 22.13 or later in the Node.js 22 release line, or Node.js 24 or later. Install the public Git release over HTTPS:
 
 ```bash
 npm install --save-dev git+https://github.com/tasksquatch/presubmit.git#v0.1.2
@@ -27,7 +27,7 @@ Interactive authentication also needs a working Secret Service session on Linux,
 
 Presubmit's OS credential-store integration is intended for local developer computers, where an interactive user can log in and access a keychain. CI runners generally do not have that session. Installing `libsecret-1-0` alone does not configure authentication, and the CLI does not automatically use GitHub Actions' `GITHUB_TOKEN`.
 
-To run checks in CI without publishing a separate Check Run, use `--no-publish`. For example, after checking out the repository and setting up Node.js 22 or later:
+To run checks in CI without publishing a separate Check Run, use `--no-publish`. For example, after checking out the repository and setting up a supported Node.js version (22.13+ in the 22 release line, or 24+):
 
 ```yaml
 - name: Install credential-store runtime dependency
