@@ -1,6 +1,6 @@
 export type { CredentialStore, StoredCredentials } from "./store.js";
-export { KEYTAR_ACCOUNT, KEYTAR_SERVICE } from "./store.js";
-export { createKeytarStore, isKeytarAvailable } from "./keytar-store.js";
+export { KEYRING_ACCOUNT, KEYRING_SERVICE } from "./store.js";
+export { createKeyringStore, isKeyringAvailable } from "./keyring-store.js";
 export { createMemoryStore } from "./memory-store.js";
 export type {
   DeviceCodeInfo,

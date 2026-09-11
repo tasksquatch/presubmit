@@ -41,11 +41,11 @@
     "node": "^22.13.0 || >=24.0.0"
   },
   "dependencies": {
+    "@napi-rs/keyring": "^2.0.0",
     "@octokit/oauth-methods": "^6.0.5",
     "@octokit/request": "^10.0.16",
     "@octokit/rest": "^22.0.1",
     "commander": "^15.0.0",
-    "keytar": "^7.9.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
@@ -59,7 +59,6 @@
     "vitest": "^5.0.0"
   },
   "allowScripts": {
-    "keytar@7.9.0": true,
     "esbuild@0.28.2": true
   }
 }

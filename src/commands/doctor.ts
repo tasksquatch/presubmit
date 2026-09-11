@@ -4,7 +4,7 @@ import {
   AuthError,
   createDefaultAuthSession,
   defaultCheckChecksWrite,
-  isKeytarAvailable as defaultIsKeytarAvailable,
+  isKeyringAvailable as defaultIsKeyringAvailable,
   type AuthSession,
 } from "../auth/index.js";
 import {
@@ -51,7 +51,7 @@ export interface DoctorCommandOptions {
   session?: AuthSession;
   exec?: GitExec;
   isGitAvailable?: () => Promise<boolean>;
-  isKeytarAvailable?: () => Promise<boolean>;
+  isKeyringAvailable?: () => Promise<boolean>;
   isCommandAvailable?: (command: string) => Promise<boolean>;
   checkChecksWrite?: (
     accessToken: string,
@@ -107,7 +107,7 @@ export async function doctorCommand(
   const cwd = opts.cwd ?? process.cwd();
   const env = opts.env ?? process.env;
   const isGitAvailable = opts.isGitAvailable ?? defaultIsGitAvailable;
-  const isKeytarAvailable = opts.isKeytarAvailable ?? defaultIsKeytarAvailable;
+  const isKeyringAvailable = opts.isKeyringAvailable ?? defaultIsKeyringAvailable;
   const isCommandAvailable =
     opts.isCommandAvailable ?? defaultIsCommandAvailable;
   const checkChecksWrite = opts.checkChecksWrite ?? defaultCheckChecksWrite;
@@ -132,19 +132,19 @@ export async function doctorCommand(
     });
   }
 
-  const keytarOk = await isKeytarAvailable();
-  if (keytarOk) {
+  const keyringOk = await isKeyringAvailable();
+  if (keyringOk) {
     record({
-      name: "keytar",
+      name: "credential-store",
       status: "ok",
       message: "OS credential store available",
     });
   } else {
     record({
-      name: "keytar",
+      name: "credential-store",
       status: "fail",
       message:
-        "OS credential store unavailable. Install keytar native deps or check Secret Service / Keychain access.",
+        "OS credential store unavailable. On Linux install libsecret-1-0 and enable Secret Service; otherwise check Keychain / Credential Manager.",
       exitCode: ExitCode.AuthError,
     });
   }
@@ -279,7 +279,7 @@ export async function doctorCommand(
   let authUsable = false;
   let accessToken: string | undefined;
 
-  if (keytarOk && isClientIdConfigured(clientId)) {
+  if (keyringOk && isClientIdConfigured(clientId)) {
     try {
       const session =
         opts.session ?? (await createDefaultAuthSession({ env }));
@@ -339,12 +339,12 @@ export async function doctorCommand(
         exitCode: ExitCode.AuthError,
       });
     }
-  } else if (!keytarOk) {
+  } else if (!keyringOk) {
     record({
       name: "auth",
       status: "fail",
       message:
-        "Cannot check auth while the OS credential store is unavailable. Fix keytar, then run `presubmit login`.",
+        "Cannot check auth while the OS credential store is unavailable. Fix the credential store, then run `presubmit login`.",
       exitCode: ExitCode.AuthError,
     });
   } else {
@@ -474,7 +474,7 @@ function isEnvOnly(
     "session",
     "exec",
     "isGitAvailable",
-    "isKeytarAvailable",
+    "isKeyringAvailable",
     "isCommandAvailable",
     "checkChecksWrite",
     "discover",
