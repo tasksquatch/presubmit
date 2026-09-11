@@ -7,7 +7,7 @@ Run a repository's local checks and publish a GitHub Check Run named **Local Pre
 Requires Node.js 24 or later. Install from the npm registry:
 
 ```bash
-npm install --save-dev @tasksquatch/presubmit@0.1.3
+npm install --save-dev @tasksquatch/presubmit@0.1.4
 ```
 
 Commit the generated lockfile and use `npm ci` in automation. Use `npx --no-install presubmit` so a missing dependency cannot cause an unexpected download. Install only reviewed versions.
@@ -152,7 +152,7 @@ Tokens are stored through the OS credential store. `presubmit logout` clears loc
 
 ## Publishing / provenance
 
-Package releases are published to the npmjs registry (`@tasksquatch/presubmit`) from GitHub Actions using [trusted publishing](https://docs.npmjs.com/trusted-publishers/) with automatic provenance. Maintainers publish by pushing an immutable version tag (for example `v0.1.3`) after configuring the npm Trusted Publisher for workflow `.github/workflows/publish.yml`. Do not move existing release tags. Prefer reviewing provenance attestations for installs once a registry release exists.
+Package releases are published to the npmjs registry (`@tasksquatch/presubmit`) from GitHub Actions using [trusted publishing](https://docs.npmjs.com/trusted-publishers/) with automatic provenance. Maintainers publish by pushing an immutable version tag (for example `v0.1.4`) after configuring the npm Trusted Publisher for workflow `.github/workflows/publish.yml`. Do not move existing release tags. Prefer reviewing provenance attestations for installs once a registry release exists.
 
 ## Exit codes
 

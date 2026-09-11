@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { VERSION } from "../version.js";
 
 // A throwing import models hosts without the native credential-store library.
 afterEach(() => {
@@ -62,7 +63,7 @@ describe("lazy credential store", () => {
     expect(output.join("")).toContain("Usage:");
     output.length = 0;
     expect(() => program.parse(["node", "cli", "--version"])).toThrow();
-    expect(output.join("")).toContain("0.1.3");
+    expect(output.join("")).toContain(VERSION);
     const { createKeyringStore, isKeyringAvailable } = await import(
       "./keyring-store.js"
     );

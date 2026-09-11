@@ -146,14 +146,14 @@ describe("buildCheckOutput", () => {
       headSha: "deadbeef",
       login: "dev",
       durationMs: 1500,
-      cliVersion: "0.1.3",
+      cliVersion: "0.1.4",
       attestation: "local-developer",
     });
     expect(out.title).toBe("Local Presubmit passed");
     expect(out.summary).toContain("deadbeef");
     expect(out.summary).toContain("**Attestation:** `local-developer`");
     expect(out.summary).toContain("@dev");
-    expect(out.summary).toContain("0.1.3");
+    expect(out.summary).toContain("0.1.4");
     expect(out.summary).toMatch(/not independent hosted verification/i);
     expect(out).not.toHaveProperty("text");
   });
@@ -165,7 +165,7 @@ describe("buildCheckOutput", () => {
       headSha: "deadbeef",
       login: "dev",
       durationMs: 1500,
-      cliVersion: "0.1.3",
+      cliVersion: "0.1.4",
       attestation: "orchestrator",
     });
     expect(out.summary).toContain("**Attestation:** `orchestrator`");
@@ -183,7 +183,7 @@ describe("buildCheckOutput", () => {
       conclusion: "failure",
       headSha: "sha",
       durationMs: 10,
-      cliVersion: "0.1.3",
+      cliVersion: "0.1.4",
       attestation: "local-developer",
       resultLine: "Local checks failed (exit 1). Truncated runner output is attached.",
       text: "```text\ntest failed\n```",
@@ -200,7 +200,7 @@ describe("buildCheckOutput", () => {
       conclusion: "success",
       headSha: "sha",
       durationMs: 10,
-      cliVersion: "0.1.3",
+      cliVersion: "0.1.4",
       attestation: "local-developer",
     });
     expect(out).not.toHaveProperty("text");
