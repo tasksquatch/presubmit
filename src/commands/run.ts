@@ -1,8 +1,11 @@
 import {
   AuthError,
   createDefaultAuthSession,
+  createInstallationAuth,
   defaultCheckChecksWrite,
+  type AuthMode,
   type AuthSession,
+  type InstallationAuthResult,
 } from "../auth/index.js";
 import { ConfigError, loadConfig } from "../config/index.js";
 import {
@@ -30,7 +33,7 @@ import {
 } from "../runner/index.js";
 import { VERSION } from "../version.js";
 
-export interface RunCommandOptions {
+export interface RunPresubmitOptions {
   cwd?: string;
   /** `--sha` override for automation/testing. */
   sha?: string;
@@ -38,6 +41,9 @@ export interface RunCommandOptions {
   publish?: boolean;
   /** `--skip-integrity` testing escape hatch. */
   skipIntegrity?: boolean;
+  /** Explicit auth mode. Default `device`; never auto-selected from env. */
+  auth?: AuthMode;
+  env?: NodeJS.ProcessEnv;
   exec?: GitExec;
   /** Test seam: inject discovered state. */
   discover?: (cwd: string) => Promise<RepoState>;
@@ -45,21 +51,28 @@ export interface RunCommandOptions {
   session?: AuthSession;
   /** Test seam: Checks client (skips Octokit construction). */
   checksClient?: ChecksClient;
+  /** Test seam: installation token mint. */
+  installationAuth?: (env: NodeJS.ProcessEnv) => Promise<InstallationAuthResult>;
   /** Test seam: runner. */
   runChecksFn?: (options: RunChecksOptions) => Promise<RunChecksResult>;
   spawnFn?: SpawnFn;
   now?: () => number;
 }
 
+/** CLI-facing alias; prefer `runPresubmit` for library callers. */
+export type RunCommandOptions = RunPresubmitOptions;
+
 /**
- * `presubmit run` — integrity gates, optional Check Run lifecycle, local runner.
+ * Core `presubmit run` pipeline — integrity gates, optional Check Run lifecycle, local runner.
  */
-export async function runCommand(
-  options: RunCommandOptions = {},
+export async function runPresubmit(
+  options: RunPresubmitOptions = {},
 ): Promise<ExitCode> {
   const cwd = options.cwd ?? process.cwd();
   const publish = options.publish ?? true;
   const now = options.now ?? Date.now;
+  const auth: AuthMode = options.auth ?? "device";
+  const env = options.env ?? process.env;
 
   let config;
   try {
@@ -136,17 +149,38 @@ export async function runCommand(
     }
 
     try {
-      const session =
-        options.session ?? (await createDefaultAuthSession());
-      const credentials = await session.ensureAccessToken();
-      login = credentials.login;
+      if (auth === "installation") {
+        if (options.checksClient) {
+          checks = options.checksClient;
+        } else {
+          const installAuth = options.installationAuth
+            ? await options.installationAuth(env)
+            : await createInstallationAuth(env);
+          checks = createChecksClient(
+            createOctokit({ token: installAuth.accessToken }),
+            {
+              accessToken: installAuth.accessToken,
+              checkChecksWrite: installAuth.checkChecksWrite,
+            },
+          );
+        }
+        info("Using GitHub App installation authentication.");
+      } else {
+        const session =
+          options.session ?? (await createDefaultAuthSession({ env }));
+        const credentials = await session.ensureAccessToken();
+        login = credentials.login;
 
-      checks =
-        options.checksClient ??
-        createChecksClient(createOctokit({ token: credentials.accessToken }), {
-          accessToken: credentials.accessToken,
-          checkChecksWrite: defaultCheckChecksWrite,
-        });
+        checks =
+          options.checksClient ??
+          createChecksClient(
+            createOctokit({ token: credentials.accessToken }),
+            {
+              accessToken: credentials.accessToken,
+              checkChecksWrite: defaultCheckChecksWrite,
+            },
+          );
+      }
 
       await checks.verifyAppAccess(state.repo.owner, state.repo.repo);
       info(
@@ -185,6 +219,7 @@ export async function runCommand(
       runner: config.runner,
       runnerArgs: config.runnerArgs,
       maxLogLines: config.maxLogLines,
+      env,
       ...(options.spawnFn ? { spawnFn: options.spawnFn } : {}),
     });
   } catch (err) {
@@ -260,4 +295,13 @@ export async function runCommand(
 
   info("Local checks passed.");
   return ExitCode.Success;
+}
+
+/**
+ * `presubmit run` — thin CLI mapper over `runPresubmit`.
+ */
+export async function runCommand(
+  options: RunCommandOptions = {},
+): Promise<ExitCode> {
+  return runPresubmit(options);
 }

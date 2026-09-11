@@ -45,15 +45,12 @@ describe("isClientIdConfigured", () => {
 });
 
 describe("detectForbiddenSecretEnvs", () => {
-  it("reports secret and private key env vars when set", () => {
+  it("reports client secret env vars when set", () => {
     const found = detectForbiddenSecretEnvs({
       PRESUBMIT_GITHUB_CLIENT_SECRET: "nope",
-      PRESUBMIT_GITHUB_PRIVATE_KEY: "also-nope",
+      PRESUBMIT_GITHUB_PRIVATE_KEY: "installation-ok",
     });
-    expect(found).toEqual([
-      "PRESUBMIT_GITHUB_CLIENT_SECRET",
-      "PRESUBMIT_GITHUB_PRIVATE_KEY",
-    ]);
+    expect(found).toEqual(["PRESUBMIT_GITHUB_CLIENT_SECRET"]);
   });
 
   it("ignores empty forbidden env vars", () => {

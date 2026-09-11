@@ -234,4 +234,111 @@ describe("doctorCommand", () => {
     expect(code).toBe(ExitCode.Success);
     expect(warns.join("\n")).toMatch(/CLIENT_SECRET/);
   });
+
+  it("does not treat PRESUBMIT_GITHUB_PRIVATE_KEY as a forbidden unused secret", async () => {
+    const { warns } = captureStd();
+    const code = await doctorCommand({
+      ...healthyBase,
+      auth: "device",
+      env: {
+        PRESUBMIT_GITHUB_CLIENT_ID: "Iv1.doctor-test",
+        PRESUBMIT_GITHUB_PRIVATE_KEY: "installation-key",
+      },
+    });
+    expect(code).toBe(ExitCode.Success);
+    expect(warns.join("\n")).not.toMatch(/PRIVATE_KEY/);
+  });
+
+  it("fails auto mode when installation env is incomplete", async () => {
+    const { errors } = captureStd();
+    const code = await doctorCommand({
+      ...healthyBase,
+      env: {
+        PRESUBMIT_GITHUB_CLIENT_ID: "Iv1.doctor-test",
+        PRESUBMIT_GITHUB_APP_ID: "1",
+      },
+    });
+    expect(code).toBe(ExitCode.AuthError);
+    expect(errors.join("\n")).toMatch(/installation-credentials/);
+    expect(errors.join("\n")).toMatch(/PRESUBMIT_GITHUB_INSTALLATION_ID/);
+  });
+
+  it("succeeds in installation mode without a keyring", async () => {
+    const { errors } = captureStd();
+    const code = await doctorCommand({
+      ...healthyBase,
+      auth: "installation",
+      isKeyringAvailable: async () => false,
+      env: {
+        PRESUBMIT_GITHUB_APP_ID: "1",
+        PRESUBMIT_GITHUB_INSTALLATION_ID: "2",
+        PRESUBMIT_GITHUB_PRIVATE_KEY: "inline-pem",
+      },
+      mintInstallationTokenFn: async () => ({
+        token: "install-token",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        permissions: { checks: "write" },
+        repositorySelection: "all",
+      }),
+      checkInstallationChecksWrite: async () => true,
+    });
+    expect(code).toBe(ExitCode.Success);
+    expect(errors.some((e) => e.startsWith("[fail]"))).toBe(false);
+  });
+
+  it("fails installation mode when credentials are missing", async () => {
+    const { errors } = captureStd();
+    const code = await doctorCommand({
+      ...healthyBase,
+      auth: "installation",
+      isKeyringAvailable: async () => false,
+      env: {},
+    });
+    expect(code).toBe(ExitCode.AuthError);
+    expect(errors.join("\n")).toMatch(/installation-credentials/);
+    expect(errors.join("\n")).toMatch(/PRESUBMIT_GITHUB_APP_ID/);
+  });
+
+  it("fails when installation lacks Checks write", async () => {
+    const { errors } = captureStd();
+    const code = await doctorCommand({
+      ...healthyBase,
+      auth: "installation",
+      env: {
+        PRESUBMIT_GITHUB_APP_ID: "1",
+        PRESUBMIT_GITHUB_INSTALLATION_ID: "2",
+        PRESUBMIT_GITHUB_PRIVATE_KEY: "inline-pem",
+      },
+      mintInstallationTokenFn: async () => ({
+        token: "install-token",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        permissions: { checks: "read" },
+        repositorySelection: "selected",
+      }),
+      checkInstallationChecksWrite: async () => false,
+    });
+    expect(code).toBe(ExitCode.GitHubError);
+    expect(errors.join("\n")).toContain(PRESUBMIT_APP_NAME);
+    expect(errors.join("\n")).toContain(PRESUBMIT_APP_INSTALL_URL);
+  });
+
+  it("fails when the installation id is missing on GitHub", async () => {
+    const { GitHubApiError } = await import("../github/index.js");
+    const { errors } = captureStd();
+    const code = await doctorCommand({
+      ...healthyBase,
+      auth: "installation",
+      env: {
+        PRESUBMIT_GITHUB_APP_ID: "1",
+        PRESUBMIT_GITHUB_INSTALLATION_ID: "2",
+        PRESUBMIT_GITHUB_PRIVATE_KEY: "inline-pem",
+      },
+      mintInstallationTokenFn: async () => {
+        throw new GitHubApiError("installation 2 was not found for this App");
+      },
+    });
+    expect(code).toBe(ExitCode.GitHubError);
+    expect(errors.join("\n")).toMatch(/installation-token/);
+    expect(errors.join("\n")).toMatch(/not found/);
+  });
 });

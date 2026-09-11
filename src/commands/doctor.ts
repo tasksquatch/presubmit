@@ -2,10 +2,17 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import {
   AuthError,
+  checkInstallationChecksWrite,
   createDefaultAuthSession,
   defaultCheckChecksWrite,
   isKeyringAvailable as defaultIsKeyringAvailable,
+  loadInstallationCredentials,
+  mintInstallationToken,
+  resolveDiagnosticAuthMode,
+  type AuthModeOption,
   type AuthSession,
+  type InstallationAccess,
+  type InstallationCredentials,
 } from "../auth/index.js";
 import {
   ConfigError,
@@ -27,12 +34,13 @@ import {
   appInstallHint,
   CLIENT_ID_ENV,
   detectForbiddenSecretEnvs,
+  GitHubApiError,
   isClientIdConfigured,
   PRESUBMIT_APP_INSTALL_URL,
   PRESUBMIT_APP_NAME,
   resolveClientId,
 } from "../github/index.js";
-import { ExitCode, error, info, warn } from "../output/index.js";
+import { ExitCode, error, info, redactUnknown, warn } from "../output/index.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -48,6 +56,7 @@ export interface DoctorCheckResult {
 export interface DoctorCommandOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  auth?: AuthModeOption;
   session?: AuthSession;
   exec?: GitExec;
   isGitAvailable?: () => Promise<boolean>;
@@ -57,6 +66,13 @@ export interface DoctorCommandOptions {
     accessToken: string,
     repo: GitHubRepoRef,
   ) => Promise<boolean | null>;
+  checkInstallationChecksWrite?: (
+    access: InstallationAccess,
+    repo: GitHubRepoRef,
+  ) => Promise<boolean | null>;
+  mintInstallationTokenFn?: (
+    credentials: InstallationCredentials,
+  ) => Promise<InstallationAccess>;
   /** Test seam: skip live discovery. */
   discover?: (cwd: string) => Promise<RepoState>;
   /** Test seam: inject loaded config. */
@@ -92,6 +108,34 @@ function printCheck(result: DoctorCheckResult): void {
   }
 }
 
+function recordAppInstall(
+  record: (result: DoctorCheckResult) => void,
+  write: boolean | null,
+  repo: GitHubRepoRef,
+): void {
+  if (write === true) {
+    record({
+      name: "app-install",
+      status: "ok",
+      message: `${PRESUBMIT_APP_NAME} Checks: write available for ${repo.owner}/${repo.repo}`,
+    });
+  } else if (write === false) {
+    record({
+      name: "app-install",
+      status: "fail",
+      message: `${PRESUBMIT_APP_NAME} is not installed (or lacks Checks: write) for ${repo.owner}/${repo.repo}. ${appInstallHint()}`,
+      exitCode: ExitCode.GitHubError,
+    });
+  } else {
+    record({
+      name: "app-install",
+      status: "fail",
+      message: `Could not verify ${PRESUBMIT_APP_NAME} installation for ${repo.owner}/${repo.repo}. ${appInstallHint()}`,
+      exitCode: ExitCode.GitHubError,
+    });
+  }
+}
+
 /**
  * `presubmit doctor` — full-chain diagnostics with actionable fixes.
  * Prints all checks; returns the first failure's exit code (or Success).
@@ -111,6 +155,7 @@ export async function doctorCommand(
   const isCommandAvailable =
     opts.isCommandAvailable ?? defaultIsCommandAvailable;
   const checkChecksWrite = opts.checkChecksWrite ?? defaultCheckChecksWrite;
+  const resolvedAuth = resolveDiagnosticAuthMode(opts.auth ?? "auto", env);
 
   const results: DoctorCheckResult[] = [];
   const record = (result: DoctorCheckResult): void => {
@@ -119,6 +164,7 @@ export async function doctorCommand(
   };
 
   info(`Node.js: v${process.versions.node}`);
+  info(`Auth mode: ${resolvedAuth.mode}`);
 
   const gitOk = await isGitAvailable();
   if (gitOk) {
@@ -132,27 +178,42 @@ export async function doctorCommand(
     });
   }
 
-  const keyringOk = await isKeyringAvailable();
-  if (keyringOk) {
+  let keyringOk = false;
+  if (resolvedAuth.mode === "installation") {
     record({
       name: "credential-store",
       status: "ok",
-      message: "OS credential store available",
+      message: "not required for installation auth",
     });
   } else {
-    record({
-      name: "credential-store",
-      status: "fail",
-      message:
-        "OS credential store unavailable. On Linux install libsecret-1-0 and enable Secret Service; otherwise check Keychain / Credential Manager.",
-      exitCode: ExitCode.AuthError,
-    });
+    keyringOk = await isKeyringAvailable();
+    if (keyringOk) {
+      record({
+        name: "credential-store",
+        status: "ok",
+        message: "OS credential store available",
+      });
+    } else {
+      record({
+        name: "credential-store",
+        status: "fail",
+        message:
+          "OS credential store unavailable. On Linux install libsecret-1-0 and enable Secret Service; otherwise check Keychain / Credential Manager.",
+        exitCode: ExitCode.AuthError,
+      });
+    }
   }
 
   const { clientId, source } = resolveClientId(env);
   const displayId =
     clientId.length > 8 ? `${clientId.slice(0, 4)}…${clientId.slice(-4)}` : clientId;
-  if (!isClientIdConfigured(clientId)) {
+  if (resolvedAuth.mode === "installation") {
+    record({
+      name: "client-id",
+      status: "ok",
+      message: "not required for installation auth",
+    });
+  } else if (!isClientIdConfigured(clientId)) {
     record({
       name: "client-id",
       status: "fail",
@@ -278,8 +339,36 @@ export async function doctorCommand(
 
   let authUsable = false;
   let accessToken: string | undefined;
+  let installationAccess: InstallationAccess | undefined;
 
-  if (keyringOk && isClientIdConfigured(clientId)) {
+  if (resolvedAuth.mode === "installation") {
+    try {
+      const credentials = loadInstallationCredentials(env);
+      record({
+        name: "installation-credentials",
+        status: "ok",
+        message: `app ${credentials.appId}, installation ${credentials.installationId}, private key from ${credentials.keySource}`,
+      });
+      const mint = opts.mintInstallationTokenFn ?? mintInstallationToken;
+      installationAccess = await mint(credentials);
+      authUsable = true;
+      accessToken = installationAccess.token;
+      record({
+        name: "installation-token",
+        status: "ok",
+        message: `obtained (expires ${installationAccess.expiresAt})`,
+      });
+    } catch (err) {
+      const message = redactUnknown(err);
+      const isGithub = err instanceof GitHubApiError;
+      record({
+        name: isGithub ? "installation-token" : "installation-credentials",
+        status: "fail",
+        message,
+        exitCode: isGithub ? ExitCode.GitHubError : ExitCode.AuthError,
+      });
+    }
+  } else if (keyringOk && isClientIdConfigured(clientId)) {
     try {
       const session =
         opts.session ?? (await createDefaultAuthSession({ env }));
@@ -356,29 +445,19 @@ export async function doctorCommand(
     });
   }
 
-  if (authUsable && accessToken && state?.repo) {
+  if (resolvedAuth.mode === "installation" && installationAccess && state?.repo) {
+    const write = await (opts.checkInstallationChecksWrite
+      ? opts.checkInstallationChecksWrite(installationAccess, state.repo)
+      : checkInstallationChecksWrite(installationAccess, state.repo));
+    recordAppInstall(record, write, state.repo);
+  } else if (
+    resolvedAuth.mode === "device" &&
+    authUsable &&
+    accessToken &&
+    state?.repo
+  ) {
     const write = await checkChecksWrite(accessToken, state.repo);
-    if (write === true) {
-      record({
-        name: "app-install",
-        status: "ok",
-        message: `${PRESUBMIT_APP_NAME} Checks: write available for ${state.repo.owner}/${state.repo.repo}`,
-      });
-    } else if (write === false) {
-      record({
-        name: "app-install",
-        status: "fail",
-        message: `${PRESUBMIT_APP_NAME} is not installed (or lacks Checks: write) for ${state.repo.owner}/${state.repo.repo}. ${appInstallHint()}`,
-        exitCode: ExitCode.GitHubError,
-      });
-    } else {
-      record({
-        name: "app-install",
-        status: "fail",
-        message: `Could not verify ${PRESUBMIT_APP_NAME} installation for ${state.repo.owner}/${state.repo.repo}. ${appInstallHint()}`,
-        exitCode: ExitCode.GitHubError,
-      });
-    }
+    recordAppInstall(record, write, state.repo);
   } else if (state?.repo && !authUsable) {
     record({
       name: "app-install",
@@ -471,12 +550,15 @@ function isEnvOnly(
   const optionKeys = new Set([
     "cwd",
     "env",
+    "auth",
     "session",
     "exec",
     "isGitAvailable",
     "isKeyringAvailable",
     "isCommandAvailable",
     "checkChecksWrite",
+    "checkInstallationChecksWrite",
+    "mintInstallationTokenFn",
     "discover",
     "loadConfigFn",
   ]);

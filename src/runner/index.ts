@@ -5,6 +5,13 @@
 
 import { StringDecoder } from "node:string_decoder";
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
+import { scrubPresubmitSecrets } from "./scrub.js";
+
+export {
+  CLIENT_SECRET_ENV,
+  SCRUBBED_PRESUBMIT_ENVS,
+  scrubPresubmitSecrets,
+} from "./scrub.js";
 
 export interface RunChecksOptions {
   cwd: string;
@@ -16,6 +23,8 @@ export interface RunChecksOptions {
   spawnFn?: SpawnFn;
   /** Process to attach signal handlers to (defaults to `process`). */
   signalProcess?: NodeJS.EventEmitter;
+  /** Parent env to inherit; Presubmit secrets are always stripped. */
+  env?: NodeJS.ProcessEnv;
 }
 
 export type SpawnFn = (
@@ -66,7 +75,7 @@ export async function runChecks(
 
   const child = spawnFn(options.runner, options.runnerArgs, {
     cwd: options.cwd,
-    env: process.env,
+    env: scrubPresubmitSecrets(options.env ?? process.env),
     stdio: ["ignore", "pipe", "pipe"],
   });
 

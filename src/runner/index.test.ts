@@ -2,7 +2,20 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type { ChildProcess } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
-import { runChecks, type SpawnFn } from "./index.js";
+import { runChecks, scrubPresubmitSecrets, type SpawnFn } from "./index.js";
+
+describe("scrubPresubmitSecrets", () => {
+  it("does not mutate the input env object", () => {
+    const input: NodeJS.ProcessEnv = {
+      PRESUBMIT_GITHUB_PRIVATE_KEY: "secret",
+      PATH: "/bin",
+    };
+    const scrubbed = scrubPresubmitSecrets(input);
+    expect(input.PRESUBMIT_GITHUB_PRIVATE_KEY).toBe("secret");
+    expect(scrubbed.PRESUBMIT_GITHUB_PRIVATE_KEY).toBeUndefined();
+    expect(scrubbed.PATH).toBe("/bin");
+  });
+});
 
 function fakeChild(options: {
   exitCode?: number;
@@ -125,6 +138,42 @@ describe("runChecks", () => {
 
     expect(childRef?.kill).toHaveBeenCalledWith("SIGINT");
     expect(result.cancelled).toBe(true);
+  });
+
+  it("scrubs Presubmit secrets from the child environment", async () => {
+    let childEnv: NodeJS.ProcessEnv | undefined;
+    const spawnFn: SpawnFn = (_cmd, _args, opts) => {
+      childEnv = opts.env;
+      return fakeChild({ exitCode: 0 });
+    };
+
+    await runChecks({
+      cwd: "/repo",
+      runner: "just",
+      runnerArgs: ["x"],
+      env: {
+        PATH: "/usr/bin",
+        GITHUB_TOKEN: "keep-me",
+        GH_TOKEN: "keep-me-too",
+        PRESUBMIT_GITHUB_PRIVATE_KEY: "pem-secret",
+        PRESUBMIT_GITHUB_PRIVATE_KEY_PATH: "/secret.pem",
+        PRESUBMIT_GITHUB_APP_ID: "1",
+        PRESUBMIT_GITHUB_INSTALLATION_ID: "2",
+        PRESUBMIT_GITHUB_CLIENT_SECRET: "oauth-secret",
+        PRESUBMIT_GITHUB_CLIENT_ID: "Iv1.public",
+      },
+      spawnFn,
+    });
+
+    expect(childEnv?.PATH).toBe("/usr/bin");
+    expect(childEnv?.GITHUB_TOKEN).toBe("keep-me");
+    expect(childEnv?.GH_TOKEN).toBe("keep-me-too");
+    expect(childEnv?.PRESUBMIT_GITHUB_CLIENT_ID).toBe("Iv1.public");
+    expect(childEnv?.PRESUBMIT_GITHUB_PRIVATE_KEY).toBeUndefined();
+    expect(childEnv?.PRESUBMIT_GITHUB_PRIVATE_KEY_PATH).toBeUndefined();
+    expect(childEnv?.PRESUBMIT_GITHUB_APP_ID).toBeUndefined();
+    expect(childEnv?.PRESUBMIT_GITHUB_INSTALLATION_ID).toBeUndefined();
+    expect(childEnv?.PRESUBMIT_GITHUB_CLIENT_SECRET).toBeUndefined();
   });
 
   it("propagates spawn errors", async () => {
