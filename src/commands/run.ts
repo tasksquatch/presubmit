@@ -22,8 +22,10 @@ import {
   createChecksClient,
   createOctokit,
   GitHubApiError,
+  prepareFailureOutputText,
   type AttestationMode,
   type CheckConclusion,
+  type CheckRunOutput,
   type ChecksClient,
 } from "../github/index.js";
 import { ExitCode, error, info, redactUnknown } from "../output/index.js";
@@ -41,6 +43,11 @@ export interface RunPresubmitOptions {
   sha?: string;
   /** When false (`--no-publish`), skip Check Run publish; integrity still applies. */
   publish?: boolean;
+  /**
+   * When false (`--no-failure-output`), omit Check Run `output.text`.
+   * Undefined defers to yaml `publishFailureOutput` (default true).
+   */
+  failureOutput?: boolean;
   /** `--skip-integrity` testing escape hatch. */
   skipIntegrity?: boolean;
   /** CLI `--integrity`. Default `developer`. */
@@ -103,6 +110,9 @@ export async function runPresubmit(
     error(err instanceof Error ? err.message : String(err));
     return ExitCode.ConfigError;
   }
+
+  const failureOutput =
+    options.failureOutput === false ? false : config.publishFailureOutput;
 
   let state: RepoState;
   try {
@@ -249,7 +259,7 @@ export async function runPresubmit(
           repo: state.repo.repo,
           checkRunId,
           conclusion: "failure",
-          output: buildCheckOutput({
+          output: completeOutput({
             checkName: config.checkName,
             conclusion: "failure",
             headSha: effectiveSha,
@@ -257,6 +267,8 @@ export async function runPresubmit(
             durationMs,
             cliVersion: VERSION,
             attestation,
+            failureOutput,
+            spawnError: redactUnknown(err),
           }),
         });
       } catch (completeErr) {
@@ -281,7 +293,7 @@ export async function runPresubmit(
         repo: state.repo.repo,
         checkRunId,
         conclusion,
-        output: buildCheckOutput({
+        output: completeOutput({
           checkName: config.checkName,
           conclusion,
           headSha: effectiveSha,
@@ -289,6 +301,8 @@ export async function runPresubmit(
           durationMs,
           cliVersion: VERSION,
           attestation,
+          failureOutput,
+          result,
         }),
       });
       info(`Completed Check Run ${checkRunId} as ${conclusion}.`);
@@ -318,4 +332,48 @@ export async function runCommand(
   options: RunCommandOptions = {},
 ): Promise<ExitCode> {
   return runPresubmit(options);
+}
+
+function completeOutput(params: {
+  checkName: string;
+  conclusion: CheckConclusion;
+  headSha: string;
+  login?: string;
+  durationMs: number;
+  cliVersion: string;
+  attestation: AttestationMode;
+  failureOutput: boolean;
+  result?: RunChecksResult;
+  spawnError?: string;
+}): CheckRunOutput {
+  let resultLine: string | undefined;
+  let text: string | undefined;
+
+  if (params.spawnError !== undefined) {
+    resultLine = "Failed to start local runner.";
+    if (params.failureOutput) {
+      text = prepareFailureOutputText(params.spawnError);
+    }
+  } else if (params.conclusion === "cancelled") {
+    resultLine = "Local checks were cancelled.";
+  } else if (params.conclusion === "failure" && params.result) {
+    resultLine = params.failureOutput
+      ? `Local checks failed (exit ${params.result.exitCode}). Truncated runner output is attached.`
+      : `Local checks failed (exit ${params.result.exitCode}).`;
+    if (params.failureOutput) {
+      text = prepareFailureOutputText(params.result.capturedLog);
+    }
+  }
+
+  return buildCheckOutput({
+    checkName: params.checkName,
+    conclusion: params.conclusion,
+    headSha: params.headSha,
+    login: params.login,
+    durationMs: params.durationMs,
+    cliVersion: params.cliVersion,
+    attestation: params.attestation,
+    resultLine,
+    text,
+  });
 }

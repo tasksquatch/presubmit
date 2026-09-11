@@ -7,7 +7,7 @@ import {
   GitHubApiError,
   verifyAppAccess,
 } from "./checks.js";
-import { buildCheckOutput } from "./summary.js";
+import { buildCheckOutput, GITHUB_CHECK_OUTPUT_TEXT_MAX, prepareFailureOutputText, stripAnsi } from "./summary.js";
 
 function mockOctokit(partial: {
   create?: ReturnType<typeof vi.fn>;
@@ -78,6 +78,22 @@ describe("createInProgressCheckRun / completeCheckRun", () => {
         status: "completed",
         conclusion: "failure",
         output: { title: "failed", summary: "sum" },
+      }),
+    );
+  });
+
+  it("includes output.text when set and omits it when absent", async () => {
+    const update = vi.fn().mockResolvedValue({ data: {} });
+    await completeCheckRun(mockOctokit({ update }), {
+      owner: "o",
+      repo: "r",
+      checkRunId: 9,
+      conclusion: "failure",
+      output: { title: "failed", summary: "sum", text: "tail" },
+    });
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        output: { title: "failed", summary: "sum", text: "tail" },
       }),
     );
   });
@@ -161,7 +177,7 @@ describe("buildCheckOutput", () => {
     expect(out).not.toHaveProperty("text");
   });
 
-  it("publishes structured output on failure", () => {
+  it("publishes structured output on failure without text unless provided", () => {
     const out = buildCheckOutput({
       checkName: "Local Presubmit",
       conclusion: "failure",
@@ -169,9 +185,73 @@ describe("buildCheckOutput", () => {
       durationMs: 10,
       cliVersion: "0.1.3",
       attestation: "local-developer",
+      resultLine: "Local checks failed (exit 1). Truncated runner output is attached.",
+      text: "```text\ntest failed\n```",
     });
     expect(out.title).toContain("failed");
     expect(out.summary).toContain("**Attestation:** `local-developer`");
+    expect(out.summary).toContain("**Result:** Local checks failed (exit 1)");
+    expect(out.text).toContain("test failed");
+  });
+
+  it("omits text on success even if a result line is absent", () => {
+    const out = buildCheckOutput({
+      checkName: "Local Presubmit",
+      conclusion: "success",
+      headSha: "sha",
+      durationMs: 10,
+      cliVersion: "0.1.3",
+      attestation: "local-developer",
+    });
     expect(out).not.toHaveProperty("text");
+  });
+});
+
+describe("prepareFailureOutputText", () => {
+  it("strips ANSI, redacts secrets, and fences the body", () => {
+    const text = prepareFailureOutputText(
+      `${String.fromCharCode(27)}[31mfailed ghs_shorttoken${String.fromCharCode(27)}[0m`,
+    );
+    expect(text).toMatch(/^```text\n/);
+    expect(text).toMatch(/\n```$/);
+    expect(text).not.toContain("ghs_shorttoken");
+    expect(text).toContain("[redacted]");
+    expect(text).not.toContain(String.fromCharCode(27));
+  });
+
+  it("notes when capture is empty", () => {
+    expect(prepareFailureOutputText("   ")).toContain("No captured runner output.");
+  });
+
+  it("caps published text to the GitHub Check Run limit", () => {
+    const huge = "x".repeat(GITHUB_CHECK_OUTPUT_TEXT_MAX + 50_000);
+    const text = prepareFailureOutputText(huge);
+    expect(text.length).toBeLessThanOrEqual(GITHUB_CHECK_OUTPUT_TEXT_MAX);
+    expect(text).toMatch(/truncated to last \d+ characters/);
+  });
+
+  it("neutralizes embedded fences", () => {
+    const text = prepareFailureOutputText("```\nsecret\n```");
+    expect(text.startsWith("````")).toBe(true);
+  });
+
+  it("builds a fence from the longest backtick run without quadratic scanning", () => {
+    const run = "`".repeat(20);
+    const text = prepareFailureOutputText(`before ${run} after`);
+    expect(text.startsWith("`".repeat(21))).toBe(true);
+    expect(text).toContain(run);
+  });
+});
+
+describe("stripAnsi", () => {
+  it("removes CSI color sequences", () => {
+    expect(stripAnsi(`\u001b[31mred\u001b[0m`)).toBe("red");
+  });
+
+  it("removes private-mode CSI and OSC-8 hyperlinks", () => {
+    const hideCursor = `\u001b[?25lvisible`;
+    expect(stripAnsi(hideCursor)).toBe("visible");
+    const link = `\u001b]8;;https://example.com\u0007click\u001b]8;;\u0007`;
+    expect(stripAnsi(link)).toBe("click");
   });
 });

@@ -74,6 +74,7 @@ Install the **Tasksquatch Presubmit** GitHub App on the repositories where you i
 |--------|----------|
 | `--sha <revision>` | Assert that the revision resolves to checked-out HEAD; a different commit is rejected |
 | `--no-publish` | Run checks without authentication or GitHub publication; integrity gates still apply |
+| `--no-failure-output` | Do not attach truncated runner output to failing Check Runs. YAML `publishFailureOutput: false` is the repo-wide equivalent. Default is to attach a size-capped tail |
 | `--integrity <profile>` | `developer` (default): honor yaml clean + pushed gates. `pre-push`: fail-fast without requiring remote. `post-push`: fetch remote-tracking refs and require one to contain HEAD. See [Automation contract](#automation-contract) |
 | `--auth <mode>` | `device` (default): OS keyring session. `installation`: GitHub App installation token from env |
 | `--skip-integrity` | For testing: bypass clean-worktree and pushed-commit gates; SHA equality still applies. Not an automation profile |
@@ -84,7 +85,7 @@ By default (`--integrity developer`) the worktree must be clean and HEAD must be
 
 ## Automation contract
 
-Unattended callers should pin to this CLI surface. Human `presubmit run` is unchanged.
+Unattended callers should pin to this CLI surface. Human `presubmit run` invocation, auth, and integrity profiles are unchanged; failing Check Runs now attach a truncated runner tail by default (see below).
 
 | Mode | Invocation | Auth | Integrity |
 |------|------------|------|-----------|
@@ -97,6 +98,7 @@ Unattended callers should pin to this CLI surface. Human `presubmit run` is unch
 Auth rules:
 
 - `--no-publish` never authenticates and does not read the credential store or installation env.
+- Failing Check Runs include a size-capped, redacted, ANSI-stripped runner tail in `output.text` unless `--no-failure-output` or yaml `publishFailureOutput: false`. Success and cancelled Check Runs omit that tail. `--no-publish` still skips the Check Run entirely.
 - Publishing with `--auth installation` requires `PRESUBMIT_GITHUB_APP_ID`, `PRESUBMIT_GITHUB_INSTALLATION_ID`, and `PRESUBMIT_GITHUB_PRIVATE_KEY` or `PRESUBMIT_GITHUB_PRIVATE_KEY_PATH`. `PRESUBMIT_GITHUB_PRIVATE_KEY` overrides the path when both are set.
 - Default `presubmit run` uses device-flow credentials from the OS keyring. Leftover installation env vars do not change that path.
 - `--integrity pre-push` cannot publish a Check Run (GitHub needs the SHA on the remote). Use `--no-publish`, or `--integrity post-push` after push. That combination exits **4**.
@@ -129,17 +131,20 @@ runnerArgs:
   - presubmit-local
 requireCleanWorktree: true
 requirePushedCommit: true
+publishFailureOutput: true
 ```
 
-`maxLogLines` remains a deprecated compatibility setting for local capture only (default 100; integer 0–65536). It never enables uploads. Each retained stdout, stderr, and combined output tail is capped at 64 KiB, while full output streams to the terminal.
+`maxLogLines` remains a deprecated compatibility setting for local capture only (default 100; integer 0–65536). It never enables uploads by itself. Each retained stdout, stderr, and combined output tail is capped at 64 KiB, while full output streams to the terminal. On a **failing** published Check Run, that local `capturedLog` tail is also sent as Check Run `output.text` after ANSI stripping, credential-shaped redaction, fencing, and a 65535-character cap. Set `publishFailureOutput: false` (or pass `--no-failure-output`) to keep failure Check Runs metadata-only. Success Check Runs stay metadata-only.
 
-GitHub receives only the check name, commit, attestation mode (`local-developer` or `orchestrator`), optional developer identity, duration, CLI version, and conclusion. Runner logs and runner-start error details are never attached to Check Runs. Terminal output may still contain sensitive information; treat externally collected terminal/CI logs accordingly. Do not put secrets in check names or other published metadata.
+GitHub always receives the check name, commit, attestation mode (`local-developer` or `orchestrator`), optional developer identity, duration, CLI version, and conclusion. Failure, cancellation, and runner-start errors also include a short result line. Failing Check Runs also receive truncated runner output (or a runner-start error) in `output.text` unless opted out. Redaction is best-effort and format-based (tokens, PEMs, JWTs, assignment-style secrets). Emails, IP addresses, and similar PII are left intact so logs stay actionable. Recipe output may still contain secrets the scanner does not recognize. Terminal output may still contain sensitive information; treat externally collected terminal/CI logs accordingly. Do not put secrets in check names or other published metadata.
 
 ## Trust and security
 
 Local Presubmit records attestation, not independent GitHub-hosted verification. Device-flow and installation-auth publishes use the **same** configured check name (default `Local Presubmit`); GitHub required checks match that name, not the summary attestation line. The summary labels the auth path `local-developer` or `orchestrator`. Do not treat laptop attestation as a security gate for releases. The machine, configuration, executable, and token remain under the runner's control.
 
 The configured command executes with your local user privileges and inherited environment, except that Presubmit strips App private-key, App ID, installation ID, and client-secret variables before spawning the recipe. The installation access token is held in memory only and is never exported to the child. The recipe is not otherwise sandboxed. Run untrusted contributions only in an isolated environment without sensitive credentials or access to private systems. Review dependency and runner changes before executing them.
+
+Failing Check Run `output.text` is stored on GitHub (world-readable on public repositories). Presubmit redacts credential-shaped strings before publish; this is not a guarantee that the tail is free of secrets.
 
 The OAuth client ID embedded in the CLI is public by design (not a secret). Only run `presubmit login` from a reviewed install of `@tasksquatch/presubmit`. On GitHub’s consent screen, confirm the App is **Tasksquatch Presubmit**. Unofficial forks or lookalike CLIs can reuse the same public client ID to solicit authorization for this App.
 

@@ -47,6 +47,10 @@ export function createProgram(): Command {
     .option("--sha <sha>", "Assert commit SHA matches checked-out HEAD")
     .option("--no-publish", "Run checks without publishing a Check Run")
     .option(
+      "--no-failure-output",
+      "Do not attach truncated runner output to failing Check Runs",
+    )
+    .option(
       "--skip-integrity",
       "Skip clean-worktree and pushed-SHA gates (testing only)",
     )
@@ -62,6 +66,7 @@ export function createProgram(): Command {
     .action(async (opts: {
       sha?: string;
       publish?: boolean;
+      failureOutput?: boolean;
       skipIntegrity?: boolean;
       integrity?: IntegrityProfile;
       auth?: AuthMode;
@@ -70,6 +75,8 @@ export function createProgram(): Command {
         sha: opts.sha,
         // Commander sets publish=false when --no-publish is passed.
         publish: opts.publish,
+        // Pass undefined unless --no-failure-output so yaml false is not overridden.
+        failureOutput: opts.failureOutput === false ? false : undefined,
         skipIntegrity: opts.skipIntegrity,
         integrity: opts.integrity,
         auth: opts.auth,

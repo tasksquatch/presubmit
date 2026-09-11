@@ -31,6 +31,9 @@ describe("createProgram", () => {
       "pre-push",
       "post-push",
     ]);
+    expect(run?.options.some((o) => o.long === "--no-failure-output")).toBe(
+      true,
+    );
     const doctorAuth = doctor?.options.find((o) => o.long === "--auth");
     expect(doctorAuth?.argChoices).toEqual(["auto", "device", "installation"]);
   });
